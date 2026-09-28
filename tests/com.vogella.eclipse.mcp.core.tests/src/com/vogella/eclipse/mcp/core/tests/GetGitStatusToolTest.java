@@ -52,6 +52,8 @@ class GetGitStatusToolTest {
 		}
 		try (var walk = Files.walk(directory)) {
 			for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+				// jgit writes objects read-only, which Windows refuses to delete
+				path.toFile().setWritable(true);
 				Files.deleteIfExists(path);
 			}
 		}

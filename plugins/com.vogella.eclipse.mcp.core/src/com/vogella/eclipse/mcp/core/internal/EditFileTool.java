@@ -2,6 +2,7 @@ package com.vogella.eclipse.mcp.core.internal;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.Map;
 
@@ -98,9 +99,10 @@ public final class EditFileTool implements IMcpTool {
 
 		Charset charset;
 		String content;
-		try {
+		// closed at once: an open stream keeps the file locked on Windows
+		try (InputStream in = file.getContents(true)) {
 			charset = Charset.forName(file.getCharset());
-			content = new String(file.getContents(true).readAllBytes(), charset);
+			content = new String(in.readAllBytes(), charset);
 		} catch (CoreException | IOException | RuntimeException e) {
 			return McpToolResult.error("Could not read '%s': %s".formatted(path, e)); //$NON-NLS-1$
 		}

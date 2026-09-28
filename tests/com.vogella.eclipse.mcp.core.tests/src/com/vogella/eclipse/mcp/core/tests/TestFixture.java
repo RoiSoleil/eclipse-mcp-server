@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
@@ -20,6 +22,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
@@ -179,11 +182,30 @@ final class TestFixture {
 	}
 
 	void dispose() throws CoreException {
+		waitForLaunches();
 		for (IProject project : created) {
-			if (project.exists()) {
-				project.delete(true, true, new NullProgressMonitor());
-			}
+			removeLeftover(project);
 		}
 		created.clear();
+	}
+
+	/**
+	 * Lets launched test JVMs exit before their projects are deleted.
+	 * <p>
+	 * A run reports done when the session ends, which is before the process is gone,
+	 * and on Windows a process whose working directory is the project keeps that
+	 * directory from being deleted.
+	 */
+	private static void waitForLaunches() {
+		long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+		while (System.nanoTime() < until && Arrays.stream(DebugPlugin.getDefault().getLaunchManager().getLaunches())
+				.anyMatch(launch -> !launch.isTerminated())) {
+			try {
+				Thread.sleep(100);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+		}
 	}
 }

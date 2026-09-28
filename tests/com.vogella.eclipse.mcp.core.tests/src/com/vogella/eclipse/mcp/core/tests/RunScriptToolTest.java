@@ -12,6 +12,7 @@ import org.eclipse.core.runtime.preferences.InstanceScope;
 
 import org.junit.jupiter.api.Test;
 
+import com.vogella.eclipse.mcp.core.FileLocations;
 import com.vogella.eclipse.mcp.core.McpToolResult;
 
 /**
@@ -49,7 +50,9 @@ class RunScriptToolTest {
 		String key = "callTimeoutSeconds";
 		InstanceScope.INSTANCE.getNode(qualifier).putInt(key, 4);
 		try {
-			Map<String, Object> wait = Map.of("command", "sleep 3", "directory",
+			// cmd.exe has no sleep, and a command that fails at once spends no budget
+			String sleep = FileLocations.isWindows() ? "ping -n 4 127.0.0.1 > nul" : "sleep 3";
+			Map<String, Object> wait = Map.of("command", sleep, "directory",
 					Files.createTempDirectory("mcp-script-budget").toString(), "wait", Boolean.TRUE, "timeoutSeconds",
 					Integer.valueOf(5));
 			Map<String, Object> result = TestFixture.callAndParse(TOOL, Map.of("stopOnFailure", Boolean.FALSE,

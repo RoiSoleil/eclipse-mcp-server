@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -199,13 +200,14 @@ public final class FlameGraph {
 		if (value < 1024) {
 			return value + " B"; //$NON-NLS-1$
 		}
+		// Locale.ROOT: the page is English, and a German default locale wrote "1,0 KB"
 		if (value < 1024 * 1024) {
-			return "%.1f KB".formatted(Double.valueOf(value / 1024.0)); //$NON-NLS-1$
+			return String.format(Locale.ROOT, "%.1f KB", Double.valueOf(value / 1024.0)); //$NON-NLS-1$
 		}
 		if (value < 1024L * 1024 * 1024) {
-			return "%.1f MB".formatted(Double.valueOf(value / (1024.0 * 1024))); //$NON-NLS-1$
+			return String.format(Locale.ROOT, "%.1f MB", Double.valueOf(value / (1024.0 * 1024))); //$NON-NLS-1$
 		}
-		return "%.2f GB".formatted(Double.valueOf(value / (1024.0 * 1024 * 1024))); //$NON-NLS-1$
+		return String.format(Locale.ROOT, "%.2f GB", Double.valueOf(value / (1024.0 * 1024 * 1024))); //$NON-NLS-1$
 	}
 
 	public static String page(Spec spec) {

@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.Map;
 
+import org.eclipse.egit.core.RepositoryCache;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.RefUpdate;
@@ -90,7 +91,21 @@ class FetchPullRequestToolTest {
 		if (api != null) {
 			api.stop(0);
 		}
+		release(root);
 		delete(root);
+	}
+
+	/**
+	 * Closes the repositories the tool opened through EGit's cache, which keeps them
+	 * open on purpose; on Windows an open pack file cannot be deleted.
+	 */
+	private static void release(Path directory) {
+		for (Repository repository : RepositoryCache.INSTANCE.getAllRepositories()) {
+			if (repository.getDirectory().toPath().startsWith(directory)) {
+				repository.close();
+			}
+		}
+		RepositoryCache.INSTANCE.clear();
 	}
 
 	/**
@@ -106,6 +121,8 @@ class FetchPullRequestToolTest {
 			try (var walk = Files.walk(directory)) {
 				for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
 					try {
+						// jgit writes objects read-only, which Windows refuses to delete
+						path.toFile().setWritable(true);
 						Files.deleteIfExists(path);
 					} catch (DirectoryNotEmptyException e) {
 						// something appeared after the walk listed it, so the next attempt takes it
@@ -148,7 +165,7 @@ class FetchPullRequestToolTest {
 			assertEquals(HEAD_BRANCH, git.getRepository().getBranch());
 			assertEquals(headSha, git.getRepository().resolve("HEAD").name());
 		}
-		assertEquals("from the pull request\n", Files.readString(local.resolve("tracked.txt")),
+		assertEquals("from the pull request\n", workingCopy("tracked.txt"),
 				"the working tree has to hold the pull request's version");
 	}
 
@@ -199,7 +216,12 @@ class FetchPullRequestToolTest {
 			assertEquals(HEAD_BRANCH, git.getRepository().getBranch());
 			assertEquals(moved, git.getRepository().resolve("HEAD").name());
 		}
-		assertEquals("revised\n", Files.readString(local.resolve("tracked.txt")));
+		assertEquals("revised\n", workingCopy("tracked.txt"));
+	}
+
+	/** The checked out file with LF line endings, whatever core.autocrlf the user's git config sets. */
+	private String workingCopy(String file) throws IOException {
+		return Files.readString(local.resolve(file)).replace("\r\n", "\n");
 	}
 
 	@Test

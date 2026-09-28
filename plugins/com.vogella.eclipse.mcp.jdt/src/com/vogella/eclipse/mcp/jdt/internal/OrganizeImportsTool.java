@@ -1,10 +1,11 @@
 package com.vogella.eclipse.mcp.jdt.internal;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
@@ -100,17 +101,25 @@ public final class OrganizeImportsTool implements IMcpTool {
 			throw new McpToolException("Could not refresh " + path, e); //$NON-NLS-1$
 		}
 
-		Set<String> ambiguous = new LinkedHashSet<>();
+		Map<String, Set<String>> ambiguous = new LinkedHashMap<>();
 		IChooseImportQuery query = (openChoices, ranges) -> {
 			List<TypeNameMatch> chosen = new ArrayList<>();
 			for (TypeNameMatch[] choice : openChoices) {
-				if (choice.length > 0) {
-					ambiguous.add(choice[0].getSimpleTypeName());
-					chosen.add(choice[0]);
+				if (choice.length == 0) {
+					continue;
+				}
+				chosen.add(choice[0]);
+				// one type reachable through two roots is one import, not a choice
+				Set<String> names = new TreeSet<>();
+				for (TypeNameMatch match : choice) {
+					names.add(match.getFullyQualifiedName());
+				}
+				if (names.size() > 1) {
+					ambiguous.put(choice[0].getSimpleTypeName(), names);
 				}
 			}
 			// returning null aborts the operation without touching the file
-			return resolveAmbiguous ? chosen.toArray(TypeNameMatch[]::new) : null;
+			return resolveAmbiguous || ambiguous.isEmpty() ? chosen.toArray(TypeNameMatch[]::new) : null;
 		};
 
 		OrganizeImportsOperation operation = new OrganizeImportsOperation(unit, null, true, true, true, query);
@@ -118,9 +127,12 @@ public final class OrganizeImportsTool implements IMcpTool {
 			ResourcesPlugin.getWorkspace().run(operation, monitor);
 		} catch (OperationCanceledException e) {
 			if (!ambiguous.isEmpty()) {
+				List<String> described = new ArrayList<>();
+				ambiguous.forEach((name, candidates) -> described
+						.add("%s (%s)".formatted(name, String.join(", ", candidates)))); //$NON-NLS-1$ //$NON-NLS-2$
 				return McpToolResult.error(
 						"Organize imports was not applied because these names are ambiguous: %s. Qualify them, import them by hand, or call again with resolveAmbiguous set to true." //$NON-NLS-1$
-								.formatted(String.join(", ", ambiguous))); //$NON-NLS-1$
+								.formatted(String.join(", ", described))); //$NON-NLS-1$
 			}
 			return McpToolResult.error("Organize imports was cancelled."); //$NON-NLS-1$
 		} catch (CoreException e) {
@@ -128,7 +140,7 @@ public final class OrganizeImportsTool implements IMcpTool {
 		}
 
 		JsonArray reported = new JsonArray();
-		ambiguous.forEach(reported::add);
+		ambiguous.keySet().forEach(reported::add);
 		JsonObject result = new JsonObject().put("path", path) //$NON-NLS-1$
 				.put("importsAdded", operation.getNumberOfImportsAdded()) //$NON-NLS-1$
 				.put("importsRemoved", operation.getNumberOfImportsRemoved()) //$NON-NLS-1$

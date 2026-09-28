@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -137,6 +138,8 @@ class EditFileToolTest {
 	}
 
 	private static String read(IFile file) throws Exception {
-		return new String(file.getContents(true).readAllBytes(), file.getCharset());
+		try (InputStream in = file.getContents(true)) {
+			return new String(in.readAllBytes(), file.getCharset());
+		}
 	}
 }

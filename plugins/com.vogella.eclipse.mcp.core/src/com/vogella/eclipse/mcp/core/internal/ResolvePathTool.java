@@ -180,7 +180,9 @@ public final class ResolvePathTool implements IMcpTool {
 				IPath root = new Path(candidate.getAbsolutePath());
 				IPath full = new Path(location.getAbsolutePath());
 				return json.put("repositoryRoot", candidate.getAbsolutePath()) //$NON-NLS-1$
-						.put("pathInRepository", full.removeFirstSegments(root.segmentCount()).toString()); //$NON-NLS-1$
+						// without the device a Windows path came back as C:Example.java
+						.put("pathInRepository", //$NON-NLS-1$
+								full.removeFirstSegments(root.segmentCount()).setDevice(null).toString());
 			}
 		}
 		return json.put("repositoryRoot", null) //$NON-NLS-1$

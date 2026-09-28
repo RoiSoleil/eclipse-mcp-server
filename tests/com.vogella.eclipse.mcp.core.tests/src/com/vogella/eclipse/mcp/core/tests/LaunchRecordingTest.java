@@ -18,13 +18,16 @@ import com.vogella.eclipse.mcp.core.LaunchRecording;
  */
 class LaunchRecordingTest {
 
+	/** Written with the platform's separator, which is a backslash on Windows. */
+	private static final Path FILE = Path.of("/tmp/run.jfr");
+
 	@Test
 	void theArgumentDumpsOnExit() {
-		String argument = LaunchRecording.vmArgument("profile", Path.of("/tmp/run.jfr"), 0);
+		String argument = LaunchRecording.vmArgument("profile", FILE, 0);
 
 		assertTrue(argument.startsWith("-XX:StartFlightRecording="), argument);
 		assertTrue(argument.contains("settings=profile"), argument);
-		assertTrue(argument.contains("filename=/tmp/run.jfr"), argument);
+		assertTrue(argument.contains("filename=" + FILE), argument);
 		// without this a program that ends normally takes the recording with it and
 		// there is nothing left to read, which is the whole feature
 		assertTrue(argument.contains("dumponexit=true"), argument);
@@ -36,7 +39,7 @@ class LaunchRecordingTest {
 
 	@Test
 	void aDurationWritesTheFileWithoutEndingTheProgram() {
-		String argument = LaunchRecording.vmArgument("profile", Path.of("/tmp/run.jfr"), 90);
+		String argument = LaunchRecording.vmArgument("profile", FILE, 90);
 
 		assertTrue(argument.contains("duration=90s"), argument);
 		assertTrue(argument.contains("dumponexit=true"), "the exit dump stays as the fallback: " + argument);
@@ -76,14 +79,14 @@ class LaunchRecordingTest {
 
 	@Test
 	void theNoteSaysWhenTheFileAppears() {
-		String note = LaunchRecording.note(Path.of("/tmp/run.jfr"), 0);
+		String note = LaunchRecording.note(FILE, 0);
 
-		assertTrue(note.contains("/tmp/run.jfr"), note);
+		assertTrue(note.contains(FILE.toString()), note);
 		assertTrue(note.contains("EXITS"), "the file is absent while the program runs, which surprises everyone once");
 		assertTrue(note.contains("eclipse_stop_flight_recording"), note);
 		assertTrue(note.contains("jcmd"), "the way out for a program that must keep running: " + note);
 
-		String timed = LaunchRecording.note(Path.of("/tmp/run.jfr"), 90);
+		String timed = LaunchRecording.note(FILE, 90);
 		assertTrue(timed.contains("WITHOUT ending"), timed);
 	}
 }
