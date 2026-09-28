@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 
 import com.vogella.eclipse.mcp.core.FileLocations;
@@ -95,6 +96,40 @@ final class NativeForeground {
 			return null;
 		} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
 			return "SWT's win32 internals could not be reached: " + e; //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * Whether this IDE is the application in front.
+	 * <p>
+	 * On Windows {@code getActiveShell} reads {@code GetActiveWindow}, which is the
+	 * active window of this thread's own input queue, not of the screen: a refused
+	 * {@code SetForegroundWindow} can still activate the shell inside the process,
+	 * so a raise reported foreground true while another program stayed in front.
+	 * {@code GetForegroundWindow} is the screen's answer.
+	 */
+	static boolean isForeground(Display display) {
+		Boolean owned = ownsForeground();
+		return owned != null ? owned.booleanValue() : display.getActiveShell() != null;
+	}
+
+	/** Whether a window of this process holds the foreground, or null where that cannot be asked. */
+	private static Boolean ownsForeground() {
+		if (!isSupported()) {
+			return null;
+		}
+		try {
+			Class<?> os = Class.forName(OS, true, Shell.class.getClassLoader());
+			long owner = (Long) os.getMethod("GetForegroundWindow").invoke(null); //$NON-NLS-1$
+			if (owner == 0) {
+				return Boolean.FALSE;
+			}
+			int[] process = new int[1];
+			os.getMethod("GetWindowThreadProcessId", long.class, int[].class) //$NON-NLS-1$
+					.invoke(null, Long.valueOf(owner), process);
+			return Boolean.valueOf(process[0] == ProcessHandle.current().pid());
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+			return null;
 		}
 	}
 

@@ -438,10 +438,11 @@ public final class ScreenshotTools {
 			// Reading the screen photographs whatever is in FRONT of the target, and a
 			// window from another application is not uniform, so every check this class
 			// has passes on an image of somebody's browser. That is the one failure a
-			// caller cannot detect: settled, converged, plausible area, right zoom. A
-			// display with no active shell is one where this IDE is not the foreground
-			// application, which is as much as SWT will say portably.
-			boolean foreground = display.getActiveShell() != null;
+			// caller cannot detect: settled, converged, plausible area, right zoom. On
+			// Windows the screen's own foreground window decides, since an active shell
+			// there can be active inside the process only; elsewhere a display with no
+			// active shell is as much as SWT will say portably.
+			boolean foreground = NativeForeground.isForeground(display);
 			boolean occluded = !foreground && !sameTurn;
 			boolean screenUnreliable = (sameTurn || occluded) && printable != null;
 			if (screenUnreliable) {

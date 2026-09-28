@@ -121,7 +121,7 @@ public final class ContextMenuTool implements IMcpTool {
 	}
 
 	/** The control a right click would land on, which is the viewer's, not the part's composite. */
-	private static Control viewerControl(IWorkbenchPart part) {
+	static Control viewerControl(IWorkbenchPart part) {
 		if (part.getSite().getSelectionProvider() instanceof org.eclipse.jface.viewers.Viewer viewer
 				&& viewer.getControl() != null && !viewer.getControl().isDisposed()) {
 			return viewer.getControl();
@@ -155,7 +155,7 @@ public final class ContextMenuTool implements IMcpTool {
 	 * The event carries the selection's own position, since a viewer decides what
 	 * to contribute from where the click landed.
 	 */
-	private static Menu detect(Control control) {
+	static Menu detect(Control control) {
 		Event event = new Event();
 		event.type = SWT.MenuDetect;
 		event.widget = control;
@@ -167,7 +167,7 @@ public final class ContextMenuTool implements IMcpTool {
 	}
 
 	/** Populates a menu, which is what a dynamic contribution such as Team waits for. */
-	private static void show(Menu menu, List<Menu> shown) {
+	static void show(Menu menu, List<Menu> shown) {
 		if (menu == null || menu.isDisposed() || shown.contains(menu)) {
 			return;
 		}
@@ -178,7 +178,7 @@ public final class ContextMenuTool implements IMcpTool {
 		menu.notifyListeners(SWT.Show, event);
 	}
 
-	private static void hide(Menu menu) {
+	static void hide(Menu menu) {
 		if (menu == null || menu.isDisposed()) {
 			return;
 		}
@@ -252,7 +252,7 @@ public final class ContextMenuTool implements IMcpTool {
 	}
 
 	/** The label as a person reads it, without the mnemonic marker or the accelerator. */
-	private static String label(MenuItem item) {
+	static String label(MenuItem item) {
 		String text = item.getText();
 		if (text == null) {
 			return ""; //$NON-NLS-1$
@@ -269,7 +269,7 @@ public final class ContextMenuTool implements IMcpTool {
 	 * item, whose class is internal. Both are asked through the shape they share
 	 * rather than by importing the internal one.
 	 */
-	private static String commandOf(MenuItem item) {
+	static String commandOf(MenuItem item) {
 		Object data = item.getData();
 		if (data == null) {
 			return null;

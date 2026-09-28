@@ -101,12 +101,12 @@ public final class VisibilityTool implements IMcpTool {
 				// instead, and most window managers refuse too, so the call returning
 				// says nothing. Reporting what actually happened is the difference
 				// between a caller that can check and one that photographs a browser.
-				boolean active = shell.getDisplay().getActiveShell() != null;
+				boolean active = NativeForeground.isForeground(shell.getDisplay());
 				String method = "forceActive"; //$NON-NLS-1$
 				String nativeRefusal = null;
 				if (!active && NativeForeground.isSupported()) {
 					nativeRefusal = NativeForeground.raise(shell);
-					active = shell.getDisplay().getActiveShell() != null;
+					active = NativeForeground.isForeground(shell.getDisplay());
 					if (nativeRefusal == null) {
 						method = "attachThreadInput"; //$NON-NLS-1$
 					}

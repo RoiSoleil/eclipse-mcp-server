@@ -190,6 +190,26 @@ class UiToolsTest {
 				"no running workbench");
 	}
 
+	@Test
+	void selectingAMenuItemNeedsAPathUnlessItOnlyLists() throws Exception {
+		assertRefused(TestFixture.call("eclipse_select_menu_item", Map.of()), "'path'");
+		assertRefused(TestFixture.call("eclipse_select_menu_item", Map.of("path", "  ")), "'path'");
+	}
+
+	@Test
+	void selectingAMenuItemRefusesWithoutAWorkbench() throws Exception {
+		assertRefused(TestFixture.call("eclipse_select_menu_item", Map.of("path", "Help/About Eclipse IDE", "dryRun", Boolean.TRUE)),
+				"no running workbench");
+		assertRefused(TestFixture.call("eclipse_select_menu_item", Map.of("dryRun", Boolean.TRUE)),
+				"no running workbench");
+	}
+
+	@Test
+	void selectingAMenuItemSaysThatItActs() throws Exception {
+		// the description is the only place a model learns that this tool writes
+		assertTrue(TestFixture.tool("eclipse_select_menu_item").getDescription().contains("CHANGES WHAT THE IDE DOES"));
+	}
+
 	private static IFile write(IProject project, String name, String content) throws Exception {
 		IFile file = project.getFile(name);
 		file.create(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), true,

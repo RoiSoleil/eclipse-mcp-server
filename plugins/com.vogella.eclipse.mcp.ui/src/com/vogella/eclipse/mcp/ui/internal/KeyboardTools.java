@@ -182,7 +182,7 @@ public final class KeyboardTools {
 			}
 			return UiThread.call(UI_TIMEOUT_SECONDS, () -> {
 				Display display = PlatformUI.getWorkbench().getDisplay();
-				if (display.getActiveShell() == null) {
+				if (!NativeForeground.isForeground(display)) {
 					throw new IllegalStateException(
 							"The IDE is not the active window, so a posted key would go to another application. Bring the IDE to the front, or use eclipse_type_text for plain text."); //$NON-NLS-1$
 				}
