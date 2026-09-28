@@ -51,6 +51,17 @@ class FileLocationsTest {
 	}
 
 	@Test
+	void theFiveSlashFormSimpleconfiguratorWritesIsAPath() {
+		// bundles.info carries file://///C:/... after a restart, which Path.of(URI)
+		// rejects on Windows; unreadable, cleanup took the live substituted jar for
+		// unreferenced
+		Path jar = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().resolve("x.jar");
+		String slashed = jar.toString().replace(java.io.File.separatorChar, '/');
+
+		assertEquals(jar, FileLocations.pathOf("file://///" + (slashed.startsWith("/") ? slashed.substring(1) : slashed)));
+	}
+
+	@Test
 	void nothingIsNothing() {
 		assertNull(FileLocations.pathOf((String) null));
 		assertNull(FileLocations.pathOf("  "));

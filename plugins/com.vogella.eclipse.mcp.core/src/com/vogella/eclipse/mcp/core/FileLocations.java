@@ -82,9 +82,15 @@ public final class FileLocations {
 		if (isWindows()) {
 			path = path.replace('/', '\\');
 			// "/C:/eclipse" is what a URL carries and "C:\eclipse" is what the path
-			// parser accepts; a UNC "\\host\share" keeps both of its leading slashes
-			if (path.length() > 2 && path.charAt(0) == '\\' && path.charAt(2) == ':') {
-				path = path.substring(1);
+			// parser accepts; a UNC "\\host\share" keeps both of its leading slashes.
+			// simpleconfigurator writes "file://///C:/..." into bundles.info, which
+			// Path.of(URI) rejects, so any run of slashes before a drive letter goes
+			int drive = 0;
+			while (drive < path.length() && path.charAt(drive) == '\\') {
+				drive++;
+			}
+			if (drive > 0 && path.length() > drive + 1 && path.charAt(drive + 1) == ':') {
+				path = path.substring(drive);
 			}
 		}
 		try {

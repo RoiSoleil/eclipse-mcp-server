@@ -72,6 +72,45 @@ class SubstituteBundleToolTest {
 	}
 
 	@Test
+	void repairDropsTheStaleCopyAndKeepsTheLiveSubstitutionAndItsRecord() throws Exception {
+		// the layout that was found on a real installation: two packed copies of one
+		// bundle, both in the five-slash form simpleconfigurator writes, each with its
+		// own record. Matching records by name forgot the live one as well
+		Path configuration = Files.createTempDirectory("mcp-repair").resolve("configuration");
+		Path packed = Files.createDirectories(configuration.resolve("mcp-substituted"));
+		Path live = Files.writeString(packed.resolve("ide_live.jar"), "");
+		Path stale = Files.writeString(packed.resolve("ide_stale.jar"), "");
+		String liveLine = "org.eclipse.ui.ide,3.24.0.qualifier," + fiveSlash(live) + ",4,false";
+		String staleLine = "org.eclipse.ui.ide,3.23.200.v20260901-1520," + fiveSlash(stale) + ",4,false";
+		try {
+			Map<Integer, String> superseded = SubstituteBundleTool.superseded(configuration,
+					List.of(liveLine, staleLine));
+			assertEquals(Map.of(Integer.valueOf(1), liveLine), superseded);
+
+			String[] liveRecord = { "org.eclipse.ui.ide", "org.eclipse.ui.ide,3.24.0.v1,plugins/ide.jar,4,false",
+					"org.eclipse.ui.ide,3.24.0.qualifier," + live.toUri() + ",4,false" };
+			String[] staleRecord = { "org.eclipse.ui.ide", "org.eclipse.ui.ide,3.23.200.v0,plugins/old.jar,4,false",
+					"org.eclipse.ui.ide,3.23.200.v20260901-1520," + stale.toUri() + ",4,false" };
+			List<String[]> kept = SubstituteBundleTool.recordsKept(configuration, List.of(liveRecord, staleRecord),
+					List.of(staleLine));
+			assertEquals(1, kept.size(), "only the stale substitution's record may go");
+			assertEquals(liveRecord[2], kept.get(0)[2]);
+		} finally {
+			try (var walk = Files.walk(configuration.getParent())) {
+				for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+					Files.deleteIfExists(path);
+				}
+			}
+		}
+	}
+
+	/** The form simpleconfigurator rewrites a file line into. */
+	private static String fiveSlash(Path path) {
+		String slashed = path.toString().replace(java.io.File.separatorChar, '/');
+		return "file://///" + (slashed.startsWith("/") ? slashed.substring(1) : slashed);
+	}
+
+	@Test
 	void aBundleThatIsNotThereIsSaidToBeAbsentRatherThanUnreadable() throws Exception {
 		Map<String, Object> running = TestFixture
 				.parse(SubstituteBundleTool.running("com.example.no.such.bundle").toString());

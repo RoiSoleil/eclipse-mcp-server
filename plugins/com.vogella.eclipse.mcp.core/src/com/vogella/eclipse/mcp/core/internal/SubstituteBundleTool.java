@@ -448,11 +448,11 @@ public final class SubstituteBundleTool implements IMcpTool {
 		JsonArray broken = new JsonArray();
 		Map<Integer, String> superseded = superseded(configuration, lines);
 		JsonArray dropped = new JsonArray();
-		List<String> droppedNames = new ArrayList<>();
+		List<String> droppedLines = new ArrayList<>();
 		superseded.forEach((index, winner) -> {
 			String line = lines.get(index.intValue());
-			droppedNames.add(line.substring(0, line.indexOf(',')));
-			dropped.add(new JsonObject().put("bundle", droppedNames.getLast()) //$NON-NLS-1$
+			droppedLines.add(line);
+			dropped.add(new JsonObject().put("bundle", line.substring(0, line.indexOf(','))) //$NON-NLS-1$
 					.put("line", line) //$NON-NLS-1$
 					.put("supersededBy", winner)); //$NON-NLS-1$
 		});
@@ -510,7 +510,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 				}
 			}
 			Files.write(bundlesInfo, kept, StandardCharsets.UTF_8);
-			forgetDropped(configuration, records, droppedNames);
+			forgetDropped(configuration, records, droppedLines);
 		}
 		JsonObject result = new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
 				.put("repaired", repaired) //$NON-NLS-1$
@@ -586,17 +586,44 @@ public final class SubstituteBundleTool implements IMcpTool {
 	 * left behind makes restore write the original line back, and that line names
 	 * the version the installation has since been updated away from.
 	 */
-	private static void forgetDropped(Path configuration, List<String[]> records, List<String> names)
+	private static void forgetDropped(Path configuration, List<String[]> records, List<String> droppedLines)
 			throws IOException {
-		if (records.stream().noneMatch(record -> names.contains(record[0]))) {
+		List<String[]> kept = recordsKept(configuration, records, droppedLines);
+		if (kept.size() == records.size()) {
 			return;
 		}
 		Files.deleteIfExists(configuration.resolve(RECORD));
-		for (String[] record : records) {
-			if (!names.contains(record[0])) {
-				record(configuration, record[0], record[1], record[2]);
+		for (String[] record : kept) {
+			record(configuration, record[0], record[1], record[2]);
+		}
+	}
+
+	/**
+	 * The records that survive dropping these lines.
+	 * <p>
+	 * Matched by the jar a record substituted, not by the bundle name: one bundle
+	 * has a record per substitution, and the stale line and the live substitution
+	 * are both org.eclipse.ui.ide, so matching by name forgot the live one too and
+	 * left it with no way back. The jar is compared as a path, because
+	 * simpleconfigurator rewrites the URI form of the line. Public for the test
+	 * bundle.
+	 */
+	public static List<String[]> recordsKept(Path configuration, List<String[]> records, List<String> droppedLines) {
+		List<Path> droppedJars = new ArrayList<>();
+		for (String line : droppedLines) {
+			Path jar = jarOf(configuration, line);
+			if (jar != null) {
+				droppedJars.add(jar.toAbsolutePath().normalize());
 			}
 		}
+		List<String[]> kept = new ArrayList<>();
+		for (String[] record : records) {
+			Path substituted = jarOf(configuration, record[2]);
+			if (substituted == null || !droppedJars.contains(substituted.toAbsolutePath().normalize())) {
+				kept.add(record);
+			}
+		}
+		return kept;
 	}
 
 	private static McpToolResult substitute(Path configuration, Path bundlesInfo, ToolArguments args,
