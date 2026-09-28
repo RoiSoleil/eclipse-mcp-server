@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -27,6 +28,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Platform;
+import org.osgi.framework.Version;
 
 import com.vogella.eclipse.mcp.core.FileLocations;
 import com.vogella.eclipse.mcp.core.FrameworkChanges;
@@ -66,7 +68,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 				{
 				  "type": "object",
 				  "properties": {
-				    "action":  {"type":"string","enum":["substitute","restore","status","cleanup","repair"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, all of them or only the one named by 'bundle', 'status' only reports, 'cleanup' deletes the packed jars that nothing references any more, 'repair' points a line whose jar is missing back at the installed one."},
+				    "action":  {"type":"string","enum":["substitute","restore","status","cleanup","repair"],"default":"status","description":"'substitute' packs the project and points bundles.info at it, 'restore' puts the recorded original lines back, all of them or only the one named by 'bundle', 'status' only reports, 'cleanup' deletes the packed jars that nothing references any more, 'repair' points a line whose jar is missing back at the installed one, and drops a line naming a packed jar when a higher version of the same bundle is also listed, which is what an update leaves behind: the framework installs that copy, never resolves it, and -clean does not remove it."},
 				    "bundle":  {"type":"string","description":"For restore: put back only this bundle's original line, by symbolic name, and leave every other recorded substitution in place. Without it restore undoes EVERY recorded substitution of this installation, including one another session made, since the record is per installation and an installation is shared."},
 				    "jar":     {"type":"string","description":"Absolute path of a jar that is already built, used instead of 'project'. Its Bundle-SymbolicName and Bundle-Version are read from its own manifest rather than guessed from the file name, which for a Maven build matches neither. The jar is copied, so rebuilding it afterwards does not silently change what this IDE runs."},
 				    "project": {"type":"string","description":"Plug-in project to pack, for substitute. Its output folder and the bin.includes of build.properties are what goes into the jar. CHECK WHICH CLONE IT IS: the answer reports packedFrom, because a workspace project can point at one clone of a repository while the change being measured lives in another, and then this packs a tree without it."},
@@ -189,7 +191,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 
 	private static String note(int stillSubstituted, JsonArray referencing) {
 		if (referencing.size() > stillSubstituted) {
-			return "READ referencingSubstitutedJars, NOT the count: bundles.info points at a packed jar for a bundle this record knows nothing about, which is what an older substitution leaves behind. Whoever wrote that line, the IDE loads it at the next start, and deleting the jar without changing the line is what leaves an IDE that cannot resolve the bundle. action repair puts such a line back."; //$NON-NLS-1$
+			return "READ referencingSubstitutedJars, NOT the count: bundles.info points at a packed jar for a bundle this record knows nothing about, which is what an older substitution leaves behind. Whoever wrote that line, the IDE loads it at the next start, and deleting the jar without changing the line is what leaves an IDE that cannot resolve the bundle. action repair drops such a line when a higher version of the bundle is also listed, since that one is what runs, and points it back at the installed jar when its own jar is missing; a line that is neither is still in force and needs action restore or a human."; //$NON-NLS-1$
 		}
 		if (stillSubstituted == 0) {
 			return "No substitution is in force; this IDE runs what its plugins directory holds. A record with state 'restored' is history and can be forgotten, and action cleanup deletes the jars that go with it."; //$NON-NLS-1$
@@ -375,7 +377,7 @@ public final class SubstituteBundleTool implements IMcpTool {
 		return McpToolResult.of(result.put("restartRequired", Boolean.TRUE) //$NON-NLS-1$
 				.put("note", dryRun ? "Nothing was changed. Pass dryRun false to put these lines back." //$NON-NLS-1$
 						: stillReferenced.size() > 0
-								? "The recorded lines are back, BUT bundles.info still points at a packed jar for something else, listed under stillReferenced. Do not delete anything under mcp-substituted until that is gone; action repair puts such a line back." //$NON-NLS-1$
+								? "The recorded lines are back, BUT bundles.info still points at a packed jar for something else, listed under stillReferenced. Do not delete anything under mcp-substituted until that is gone; action repair drops such a line when a higher version of the bundle is also listed." //$NON-NLS-1$
 								: "The installed bundles are back in bundles.info; restart with eclipse_restart for the IDE to run them. Delete the packed jars with action cleanup, which checks the file again first, rather than by hand: this file is written by simpleconfigurator and by other sessions, so what is unreferenced now may not be in a minute.") //$NON-NLS-1$
 				.toString());
 	}
@@ -444,7 +446,20 @@ public final class SubstituteBundleTool implements IMcpTool {
 		Path installation = configuration.getParent();
 		JsonArray repaired = new JsonArray();
 		JsonArray broken = new JsonArray();
+		Map<Integer, String> superseded = superseded(configuration, lines);
+		JsonArray dropped = new JsonArray();
+		List<String> droppedNames = new ArrayList<>();
+		superseded.forEach((index, winner) -> {
+			String line = lines.get(index.intValue());
+			droppedNames.add(line.substring(0, line.indexOf(',')));
+			dropped.add(new JsonObject().put("bundle", droppedNames.getLast()) //$NON-NLS-1$
+					.put("line", line) //$NON-NLS-1$
+					.put("supersededBy", winner)); //$NON-NLS-1$
+		});
 		for (int i = 0; i < lines.size(); i++) {
+			if (superseded.containsKey(Integer.valueOf(i))) {
+				continue;
+			}
 			String line = lines.get(i);
 			String[] fields = line.split(","); //$NON-NLS-1$
 			if (fields.length < 5 || line.startsWith("#")) { //$NON-NLS-1$
@@ -486,22 +501,102 @@ public final class SubstituteBundleTool implements IMcpTool {
 					.put("missing", String.valueOf(jar)) //$NON-NLS-1$
 					.put("line", replacement)); //$NON-NLS-1$
 		}
-		if (!dryRun && repaired.size() > 0) {
-			Files.write(bundlesInfo, lines, StandardCharsets.UTF_8);
+		boolean changed = repaired.size() > 0 || dropped.size() > 0;
+		if (!dryRun && changed) {
+			List<String> kept = new ArrayList<>();
+			for (int i = 0; i < lines.size(); i++) {
+				if (!superseded.containsKey(Integer.valueOf(i))) {
+					kept.add(lines.get(i));
+				}
+			}
+			Files.write(bundlesInfo, kept, StandardCharsets.UTF_8);
+			forgetDropped(configuration, records, droppedNames);
 		}
 		JsonObject result = new JsonObject().put("dryRun", Boolean.valueOf(dryRun)) //$NON-NLS-1$
 				.put("repaired", repaired) //$NON-NLS-1$
-				.put("repairedCount", Integer.valueOf(repaired.size())); //$NON-NLS-1$
+				.put("repairedCount", Integer.valueOf(repaired.size())) //$NON-NLS-1$
+				.put("dropped", dropped) //$NON-NLS-1$
+				.put("droppedCount", Integer.valueOf(dropped.size())); //$NON-NLS-1$
 		if (broken.size() > 0) {
 			result.put("notRepaired", broken); //$NON-NLS-1$
 		}
 		return McpToolResult.of(result
-				.put("restartRequired", Boolean.valueOf(repaired.size() > 0)) //$NON-NLS-1$
-				.put("note", repaired.size() == 0 //$NON-NLS-1$
-						? "Every line in bundles.info names a file that exists, so there is nothing to repair." //$NON-NLS-1$
-						: dryRun ? "Nothing was changed. Pass dryRun false to write these lines back." //$NON-NLS-1$
-								: "The lines are back on files that exist; restart for the IDE to load them. Until then the bundles they name stay unresolved, which shows up as NoClassDefFoundError from anything that needed them.") //$NON-NLS-1$
+				.put("restartRequired", Boolean.valueOf(changed)) //$NON-NLS-1$
+				.put("note", !changed //$NON-NLS-1$
+						? "Every line in bundles.info names a file that exists and none is superseded, so there is nothing to repair." //$NON-NLS-1$
+						: dryRun ? "Nothing was changed. Pass dryRun false to write these lines back and remove the dropped ones." //$NON-NLS-1$
+								: "bundles.info is repaired; restart for the IDE to load it. A repaired line's bundle stays unresolved until then, which shows up as NoClassDefFoundError. A dropped line was never running, since the framework resolves only the higher version, so dropping it changes nothing the IDE runs; action cleanup can now delete its jar.") //$NON-NLS-1$
 				.toString());
+	}
+
+	/**
+	 * The lines naming a packed jar that lose to a higher version of the same
+	 * bundle, mapped to the line they lose to.
+	 * <p>
+	 * An older substitution leaves such a line behind when the installation is
+	 * updated. The framework installs both copies and resolves only the higher
+	 * one, so the packed jar never runs, but it stays in the framework, where it
+	 * reads as the running version, and -clean does not remove it. The winning
+	 * line's jar has to exist, or dropping the loser would leave no copy at all.
+	 * Public for the test bundle.
+	 */
+	public static Map<Integer, String> superseded(Path configuration, List<String> lines) {
+		Map<Integer, String> superseded = new LinkedHashMap<>();
+		for (int i = 0; i < lines.size(); i++) {
+			String[] fields = fieldsOf(lines.get(i));
+			if (fields == null || !lines.get(i).contains(JARS)) {
+				continue;
+			}
+			Version version = versionOf(fields[1]);
+			for (int j = 0; j < lines.size() && version != null; j++) {
+				String[] other = fieldsOf(lines.get(j));
+				if (j == i || other == null || !other[0].equals(fields[0])) {
+					continue;
+				}
+				Version higher = versionOf(other[1]);
+				Path jar = jarOf(configuration, lines.get(j));
+				if (higher != null && higher.compareTo(version) > 0 && jar != null && Files.isRegularFile(jar)) {
+					superseded.put(Integer.valueOf(i), lines.get(j));
+					break;
+				}
+			}
+		}
+		return superseded;
+	}
+
+	/** The five fields of a bundles.info line, or null for a comment or anything else. */
+	private static String[] fieldsOf(String line) {
+		if (line.startsWith("#")) { //$NON-NLS-1$
+			return null;
+		}
+		String[] fields = line.split(","); //$NON-NLS-1$
+		return fields.length < 5 ? null : fields;
+	}
+
+	private static Version versionOf(String text) {
+		try {
+			return Version.parseVersion(text);
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Drops the record of a substitution whose line was dropped, because a record
+	 * left behind makes restore write the original line back, and that line names
+	 * the version the installation has since been updated away from.
+	 */
+	private static void forgetDropped(Path configuration, List<String[]> records, List<String> names)
+			throws IOException {
+		if (records.stream().noneMatch(record -> names.contains(record[0]))) {
+			return;
+		}
+		Files.deleteIfExists(configuration.resolve(RECORD));
+		for (String[] record : records) {
+			if (!names.contains(record[0])) {
+				record(configuration, record[0], record[1], record[2]);
+			}
+		}
 	}
 
 	private static McpToolResult substitute(Path configuration, Path bundlesInfo, ToolArguments args,

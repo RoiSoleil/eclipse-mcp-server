@@ -153,8 +153,10 @@ public final class GetInstallationTool implements IMcpTool {
 					.add(unit.getVersion().toString());
 		}
 		JsonArray mismatches = new JsonArray();
+		JsonArray notResolved = new JsonArray();
 		int checked = 0;
 		int diverged = 0;
+		int unresolved = 0;
 		for (Bundle bundle : context.getBundles()) {
 			String name = bundle.getSymbolicName();
 			if (name == null) {
@@ -162,6 +164,18 @@ public final class GetInstallationTool implements IMcpTool {
 			}
 			java.util.Set<String> expected = inProfile.get(name);
 			if (expected == null) {
+				continue;
+			}
+			// installed is not running: of two copies of a singleton only the higher
+			// version resolves, and a leftover substitution's older copy was reported
+			// here as the one running while the framework never loaded it
+			if ((bundle.getState() & (Bundle.INSTALLED | Bundle.UNINSTALLED)) != 0) {
+				unresolved++;
+				if (notResolved.size() < maxResults) {
+					notResolved.add(new JsonObject().put("bundle", name) //$NON-NLS-1$
+							.put("version", bundle.getVersion().toString()) //$NON-NLS-1$
+							.put("location", bundle.getLocation())); //$NON-NLS-1$
+				}
 				continue;
 			}
 			checked++;
@@ -185,6 +199,13 @@ public final class GetInstallationTool implements IMcpTool {
 				.put("agrees", Boolean.valueOf(diverged == 0)) //$NON-NLS-1$
 				.put("mismatches", mismatches) //$NON-NLS-1$
 				.put("mismatchesTruncated", Boolean.valueOf(diverged > mismatches.size())); //$NON-NLS-1$
+		if (unresolved > 0) {
+			runtime.put("installedNotResolved", notResolved) //$NON-NLS-1$
+					.put("installedNotResolvedTotal", Integer.valueOf(unresolved)) //$NON-NLS-1$
+					.put("installedNotResolvedTruncated", Boolean.valueOf(unresolved > notResolved.size())) //$NON-NLS-1$
+					.put("installedNotResolvedNote", //$NON-NLS-1$
+							"These copies are installed in the framework but NOT resolved, so none of them is running and none was compared above. Usually a second copy of a singleton that lost to a higher version; a line left in bundles.info by an earlier eclipse_substitute_bundle is the common cause, and restarting with -clean does not remove it. Check eclipse_substitute_bundle action status, whose referencingSubstitutedJars lists such lines."); //$NON-NLS-1$
+		}
 		if (diverged > 0) {
 			runtime.put("warning", //$NON-NLS-1$
 					"THE VERSIONS ABOVE ARE NOT ALL RUNNING. %d of the %d bundles p2 knows about are running a different version than the profile records, so a feature version listed above may describe an install that never took effect. actuallyRunning is the truth; profileSays is what p2 believes. Causes: an update whose bundles were written somewhere the framework does not load from, a hot eclipse_install_bundle, a dropin, or a bundle the reconciler refused. Compare against configuration/org.eclipse.equinox.simpleconfigurator/bundles.info, and restart with -clean if bundles.info is already correct." //$NON-NLS-1$
