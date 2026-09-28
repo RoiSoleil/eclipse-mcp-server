@@ -27,6 +27,7 @@ import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.internal.junit.launcher.TestKindRegistry;
 import org.eclipse.jdt.junit.JUnitCore;
 import org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
 import org.eclipse.pde.launching.IPDELauncherConstants;
@@ -668,16 +669,9 @@ public final class RunTestsTool implements IMcpTool {
 	}
 
 	/**
-	 * Which JUnit the project is on, read from its own build path. JDT then supplies
-	 * the matching runner, so nothing here has to know about JUnit itself.
+	 * The test kind JDT's launch delegate expects for the project, which tells JUnit 5 from JUnit 6.
 	 */
-	private static String testKind(IJavaProject javaProject) throws CoreException {
-		if (javaProject.findType("org.junit.jupiter.api.Test") != null) { //$NON-NLS-1$
-			return "org.eclipse.jdt.junit.loader.junit5"; //$NON-NLS-1$
-		}
-		if (javaProject.findType("org.junit.Test") != null) { //$NON-NLS-1$
-			return "org.eclipse.jdt.junit.loader.junit4"; //$NON-NLS-1$
-		}
-		return "org.eclipse.jdt.junit.loader.junit3"; //$NON-NLS-1$
+	private static String testKind(IJavaProject javaProject) {
+		return TestKindRegistry.getContainerTestKindId(javaProject);
 	}
 }

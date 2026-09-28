@@ -172,6 +172,7 @@ Do not undo these without understanding why they are there.
 - `RenameTool` calls `initializeValidationData` and runs through `IWorkspace.run`, and refuses binary elements, which JDT's processor dereferences as null.
 - `JavaModelSupport.findType` prefers source over a binary type from build output.
 - `SearchMatch.getResource()` names the owning project for a jar match; use `JavaModelSupport.describeLocation` and never `match.getResource().getFullPath()`.
+- `eclipse_run_tests` takes the test kind from the x-friends `TestKindRegistry.getContainerTestKindId`, because `JUnitLaunchConfigurationDelegate.preLaunchCheck` rechecks it and refuses a JUnit 6 project launched as junit5; a copy of that decision would drift from the delegate.
 - `eclipse_clean_up` deliberately depends on the discouraged `CleanUpConstants` and `*CleanUpCore` (no public alternative; `CleanUpRefactoring` drags in the UI). `RemoveUnusedImportsTool` stays on public API. Clean-up options are a tree, so `CleanUpEntry.companions` enables the parents a leaf needs.
 - `eclipse_delete` is an LTK resource delete, so PDE's participants do not fire and `plugin.xml` and `Export-Package` are not updated; the description says so and the answer reports dangling evidence. Do not drive JDT's internal delete processor.
 - `eclipse_list_declarations`:
