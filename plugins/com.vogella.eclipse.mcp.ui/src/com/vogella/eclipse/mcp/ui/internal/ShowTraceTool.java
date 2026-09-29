@@ -61,9 +61,12 @@ public final class ShowTraceTool implements IMcpTool {
 		String frameFilter = args.getString("frameFilter"); //$NON-NLS-1$
 		JsonObject answer = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("running", Boolean.valueOf(session.running())) //$NON-NLS-1$
-				.put("samples", Integer.valueOf(session.ticks())); //$NON-NLS-1$
-		TracePage.publishSampling(session, includeIdle, frameFilter, args.getBoolean("includeMcpFrames", false), //$NON-NLS-1$
-				answer, args.getBoolean("open", false)); //$NON-NLS-1$
+				.put("ticks", Integer.valueOf(session.ticks())); //$NON-NLS-1$
+		boolean includeServer = args.getBoolean("includeMcpFrames", false); //$NON-NLS-1$
+		// the same counts eclipse_stop_sampling reports, so the two answers can be compared
+		SamplingRegistry.counts(session, includeIdle, frameFilter, includeServer, answer);
+		TracePage.publishSampling(session, includeIdle, frameFilter, includeServer, answer,
+				args.getBoolean("open", false)); //$NON-NLS-1$
 		return McpToolResult.of(answer.toString());
 	}
 }

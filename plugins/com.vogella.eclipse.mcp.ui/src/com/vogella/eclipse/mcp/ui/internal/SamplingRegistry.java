@@ -339,6 +339,21 @@ public final class SamplingRegistry {
 		return builder;
 	}
 
+	/** The counts of a selection, for an answer that draws the samples rather than aggregating them. */
+	public static void counts(Session session, boolean includeIdle, String frameFilter, boolean includeServer,
+			JsonObject into) {
+		Selection selection = select(session, includeIdle, frameFilter, includeServer);
+		into.put("samples", Integer.valueOf(selection.samples().size())) //$NON-NLS-1$
+				.put("idleSamplesExcluded", Integer.valueOf(includeIdle ? 0 : selection.idle())); //$NON-NLS-1$
+		if (!includeServer) {
+			into.put("serverSamplesExcluded", Integer.valueOf(selection.serverDropped())) //$NON-NLS-1$
+					.put("serverFramesElidedFrom", Integer.valueOf(selection.serverElided())); //$NON-NLS-1$
+		}
+		if (frameFilter != null) {
+			into.put("samplesWithoutTheFilteredFrame", Integer.valueOf(selection.filtered())); //$NON-NLS-1$
+		}
+	}
+
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle, String frameFilter, boolean includeAllThreads, boolean includeServer) {
 		Selection selection = select(session, includeIdle, frameFilter, includeServer);
