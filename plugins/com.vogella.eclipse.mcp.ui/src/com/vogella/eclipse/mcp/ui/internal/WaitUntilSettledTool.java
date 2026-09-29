@@ -3,7 +3,6 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -40,7 +39,7 @@ public final class WaitUntilSettledTool implements IMcpTool {
 
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 		}
 		ToolArguments args = ToolArguments.of(arguments);

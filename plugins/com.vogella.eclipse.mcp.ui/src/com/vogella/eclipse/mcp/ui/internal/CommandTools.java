@@ -220,7 +220,7 @@ public final class CommandTools {
 			long timeoutSeconds = args.getInt("timeoutSeconds", 10, 1, 25); //$NON-NLS-1$
 			Map<String, String> parameters = parameterMap(arguments.get("parameters")); //$NON-NLS-1$
 			if (!PlatformUI.isWorkbenchRunning()) {
-				return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
+				return McpToolResult.error(Workbenches.noIde());
 			}
 
 			ExecutionRecorder recorder = new ExecutionRecorder();

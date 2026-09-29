@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.ClientSessions;
 import com.vogella.eclipse.mcp.core.IMcpTool;
@@ -47,10 +46,10 @@ public final class SamplingTools {
 				return Arrays.stream(mx.getAllThreadIds()).filter(id -> id != self).toArray();
 			};
 		}
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return null;
 		}
-		long[] ui = { PlatformUI.getWorkbench().getDisplay().getThread().threadId() };
+		long[] ui = { Workbenches.display().getThread().threadId() };
 		return mx -> ui;
 	}
 

@@ -10,8 +10,6 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.ui.IWorkbenchWindow;
-import org.eclipse.ui.PlatformUI;
 
 /**
  * Picks a shell without depending on its title, which several shells share.
@@ -88,8 +86,7 @@ final class Shells {
 		if (activeShell != null) {
 			return activeShell;
 		}
-		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-		return window == null ? null : window.getShell();
+		return Workbenches.activeWindowShell();
 	}
 
 	/** The topmost visible shell that is neither a workbench window nor modal. */
@@ -115,12 +112,7 @@ final class Shells {
 	}
 
 	static boolean isWorkbench(Shell shell) {
-		for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
-			if (window.getShell() == shell) {
-				return true;
-			}
-		}
-		return false;
+		return Workbenches.windowShells().contains(shell);
 	}
 
 	/** workbench, dialog or popup, which is what tells the proposal popup apart. */

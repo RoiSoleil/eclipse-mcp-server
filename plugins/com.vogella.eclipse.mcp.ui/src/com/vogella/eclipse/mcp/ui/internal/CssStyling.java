@@ -426,7 +426,7 @@ final class CssStyling {
 			}
 		}
 		if (engines.isEmpty()) {
-			Display display = PlatformUI.getWorkbench().getDisplay();
+			Display display = Workbenches.display();
 			CSSEngine engine = display == null ? null : WidgetElement.getEngine(display);
 			if (engine != null) {
 				engines.add(engine);
@@ -657,10 +657,10 @@ final class CssStyling {
 	 * the moment that becomes permanent for the rest of the session.
 	 */
 	static void dropIfApplied() {
-		if (snippet == null || !PlatformUI.isWorkbenchRunning()) {
+		if (snippet == null || !Workbenches.running()) {
 			return;
 		}
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		if (display == null || display.isDisposed()) {
 			return;
 		}

@@ -58,7 +58,7 @@ public final class ExitTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return McpToolResult.error("There is no running workbench to close."); //$NON-NLS-1$
+			return McpToolResult.error(Workbenches.noIde());
 		}
 		ToolArguments args = ToolArguments.of(arguments);
 		boolean save = args.getBoolean("save", false); //$NON-NLS-1$
@@ -84,7 +84,7 @@ public final class ExitTool implements IMcpTool {
 		}
 		JsonObject discarded = guard.discarded();
 		JsonObject cleared = RestartTool.clearTheWayForShutdown();
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		lastFailure = null;
 		display.timerExec(EXIT_DELAY_MILLIS, ExitTool::performExit);
 		JsonObject result = new JsonObject().put("exiting", Boolean.TRUE) //$NON-NLS-1$

@@ -13,7 +13,6 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.ClientSessions;
@@ -197,7 +196,7 @@ public final class ScreencastTools {
 										.formatted(previous.target(), resume));
 					}
 					int before = previous.frames();
-					Screencast.Session session = Screencast.getInstance().resume(PlatformUI.getWorkbench().getDisplay(),
+					Screencast.Session session = Screencast.getInstance().resume(Workbenches.display(),
 							previous, maxFrames, gap, caption, captionPosition);
 					if (session.frames() == before) {
 						throw new IllegalStateException("The first frame of the new segment could not be painted: " //$NON-NLS-1$
@@ -219,7 +218,7 @@ public final class ScreencastTools {
 				return McpToolResult.error("Could not create the frame directory: " + e.getMessage()); //$NON-NLS-1$
 			}
 			return UiThread.call(UI_TIMEOUT_SECONDS, () -> {
-				Display display = PlatformUI.getWorkbench().getDisplay();
+				Display display = Workbenches.display();
 				Control control;
 				String described;
 				boolean composed = false;

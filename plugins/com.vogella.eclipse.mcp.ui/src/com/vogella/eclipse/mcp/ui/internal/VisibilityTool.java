@@ -5,8 +5,6 @@ import java.util.Map;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.ui.IWorkbenchWindow;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -73,8 +71,7 @@ public final class VisibilityTool implements IMcpTool {
 
 	private static JsonObject apply(boolean visible, String mode) {
 		JsonArray windows = new JsonArray();
-		for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
-			Shell shell = window.getShell();
+		for (Shell shell : Workbenches.windowShells()) {
 			if (shell == null || shell.isDisposed()) {
 				continue;
 			}
@@ -142,16 +139,15 @@ public final class VisibilityTool implements IMcpTool {
 	 * restore.
 	 */
 	static void restoreIfHidden() {
-		if (!hiddenByUs || !PlatformUI.isWorkbenchRunning()) {
+		if (!hiddenByUs || !Workbenches.running()) {
 			return;
 		}
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		if (display == null || display.isDisposed()) {
 			return;
 		}
 		display.syncExec(() -> {
-			for (IWorkbenchWindow window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
-				Shell shell = window.getShell();
+			for (Shell shell : Workbenches.windowShells()) {
 				if (shell != null && !shell.isDisposed()) {
 					shell.setVisible(true);
 					shell.setMinimized(false);

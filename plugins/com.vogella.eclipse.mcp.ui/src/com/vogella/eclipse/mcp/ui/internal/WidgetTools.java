@@ -45,10 +45,14 @@ public final class WidgetTools {
 
 	/** The root control of a part, or of a shell. */
 	static Control rootOf(String partId, String shellTitle, boolean includeToolbar) {
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		if (partId == null || partId.isBlank()) {
 			Shell shell = ScreenshotTools.Capture.findShell(display, shellTitle);
 			return shell == null ? null : shell;
+		}
+		if (!Workbenches.ide()) {
+			Control control = Workbenches.e4Part(partId);
+			return control != null && includeToolbar ? ScreenshotTools.Capture.stackOf(control) : control;
 		}
 		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 		IWorkbenchPage page = window == null ? null : window.getActivePage();
@@ -760,7 +764,7 @@ public final class WidgetTools {
 			int displayY = args.getInt("displayY", 0, -100_000, 100_000); //$NON-NLS-1$
 			boolean includeToolbar = args.getBoolean("includeToolbar", false); //$NON-NLS-1$
 			return UiThread.call(10, () -> {
-				Display display = PlatformUI.getWorkbench().getDisplay();
+				Display display = Workbenches.display();
 				Control owner = null;
 				JsonObject result = new JsonObject();
 				org.eclipse.swt.graphics.Point point;

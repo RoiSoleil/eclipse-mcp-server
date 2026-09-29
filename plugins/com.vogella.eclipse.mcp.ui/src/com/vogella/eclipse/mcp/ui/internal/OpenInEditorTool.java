@@ -68,7 +68,7 @@ public final class OpenInEditorTool implements IMcpTool {
 			return McpToolResult.error("The argument 'path' is required."); //$NON-NLS-1$
 		}
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return McpToolResult.error("There is no running workbench, so nothing can be opened."); //$NON-NLS-1$
+			return McpToolResult.error(Workbenches.noIde());
 		}
 		IFile file = ResourcesPlugin.getWorkspace().getRoot().getFile(new Path(path));
 		IFileStore external = null;

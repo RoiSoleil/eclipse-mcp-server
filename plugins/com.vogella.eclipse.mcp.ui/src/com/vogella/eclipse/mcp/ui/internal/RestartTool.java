@@ -96,7 +96,7 @@ public final class RestartTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return McpToolResult.error("There is no running workbench to restart."); //$NON-NLS-1$
+			return McpToolResult.error(Workbenches.noIde());
 		}
 		ToolArguments args = ToolArguments.of(arguments);
 		boolean save = args.getBoolean("save", false); //$NON-NLS-1$
@@ -112,7 +112,7 @@ public final class RestartTool implements IMcpTool {
 		}
 
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		Workbenches.display().asyncExec(() -> {
 			try {
 				pending.complete(prepare(save, force, splash, workspace, clean, args.has("clean"))); //$NON-NLS-1$
 			} catch (RuntimeException e) {
@@ -422,7 +422,7 @@ public final class RestartTool implements IMcpTool {
 		}
 		// answer first, restart after: the server dies with the IDE, so restarting
 		// inside the call gives the caller a dropped connection instead of a result
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		// restart(true), not restart(): the no argument form relaunches without -data,
 		// so the IDE comes back up asking for a workspace and waits for a human.
 		// With a workspace of our own the arguments are already set, and restart(true)
@@ -475,7 +475,7 @@ public final class RestartTool implements IMcpTool {
 	 */
 	static CloseGuard guard(boolean save, boolean force, String discardVerb, String underVerb) {
 		JsonArray modal = new JsonArray();
-		for (Shell shell : PlatformUI.getWorkbench().getDisplay().getShells()) {
+		for (Shell shell : Workbenches.display().getShells()) {
 			boolean isModal = (shell.getStyle()
 					& (SWT.APPLICATION_MODAL | SWT.PRIMARY_MODAL | SWT.SYSTEM_MODAL)) != 0;
 			if (isModal && shell.isVisible()) {

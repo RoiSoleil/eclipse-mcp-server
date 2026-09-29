@@ -65,7 +65,7 @@ public final class ModelVisibilityTool implements IMcpTool {
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return McpToolResult.error("There is no running workbench, so there is no model to change."); //$NON-NLS-1$
+			return McpToolResult.error(Workbenches.noIde());
 		}
 		ToolArguments args = ToolArguments.of(arguments);
 		String elementId = args.getString("elementId"); //$NON-NLS-1$

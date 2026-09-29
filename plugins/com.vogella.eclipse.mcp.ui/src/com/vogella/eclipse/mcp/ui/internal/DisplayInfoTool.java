@@ -8,7 +8,6 @@ import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Monitor;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -52,10 +51,10 @@ public final class DisplayInfoTool implements IMcpTool {
 
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 		}
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		return UiThread.call(UI_TIMEOUT_SECONDS, () -> describe(display));
 	}
 

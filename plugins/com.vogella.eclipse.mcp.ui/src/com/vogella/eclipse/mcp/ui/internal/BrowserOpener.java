@@ -28,7 +28,7 @@ final class BrowserOpener implements TracePages.Opener {
 	@Override
 	public String open(String url) {
 		if (!PlatformUI.isWorkbenchRunning()) {
-			return "There is no running workbench to open a browser from."; //$NON-NLS-1$
+			return Workbenches.noIde();
 		}
 		// asyncExec, never syncExec: the call arrives on a request thread and opening
 		// a browser can block on the desktop, which must not take that thread with it

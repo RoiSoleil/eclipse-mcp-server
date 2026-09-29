@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.swt.widgets.Display;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.CallBudget;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
@@ -69,7 +68,7 @@ final class UiSettle {
 					.put("reason", //$NON-NLS-1$
 							"This call is already on the UI thread, which is what eclipse_run_script with atomic does. Nothing can drain the display queue from inside it, because the runnables waiting there are behind this one. Settle outside the atomic batch, before it starts.");
 		}
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		long requested = timeoutMillis;
 		// the server aborts the call at its timeout and the loop would carry on
 		// without anyone to answer, posting fences into an IDE nobody is waiting on

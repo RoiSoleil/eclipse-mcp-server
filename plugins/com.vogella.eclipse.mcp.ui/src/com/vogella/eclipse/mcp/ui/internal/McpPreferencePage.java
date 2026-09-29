@@ -165,7 +165,7 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 	}
 
 	private static void copyToClipboard(String value) {
-		Clipboard clipboard = new Clipboard(PlatformUI.getWorkbench().getDisplay());
+		Clipboard clipboard = new Clipboard(Workbenches.display());
 		try {
 			clipboard.setContents(new Object[] { value }, new Transfer[] { TextTransfer.getInstance() });
 		} finally {
@@ -198,21 +198,21 @@ public class McpPreferencePage extends FieldEditorPreferencePage implements IWor
 	 * a person is known to be sitting in front of the IDE.
 	 */
 	private static void reportStartFailure() {
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		Workbenches.display().asyncExec(() -> {
 			McpServerService service = McpServerService.getInstance();
 			String error = service.getLastError();
 			if (service.isRunning() || error == null) {
 				return;
 			}
 			IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-			Shell shell = window != null ? window.getShell() : PlatformUI.getWorkbench().getDisplay().getActiveShell();
+			Shell shell = window != null ? window.getShell() : Workbenches.display().getActiveShell();
 			MessageDialog.openError(shell, "MCP server not started", error
 					+ "\n\nThe port is probably held by another process, often a second Eclipse instance with the MCP server enabled on the same port. Choose a different port on the MCP preference page, or stop the other process, and press Apply again.");
 		});
 	}
 
 	private void refreshLater() {
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+		Workbenches.display().asyncExec(() -> {
 			if (url != null && !url.isDisposed()) {
 				refresh();
 			}

@@ -26,6 +26,7 @@ import org.eclipse.swt.graphics.ImageData;
 import org.eclipse.swt.graphics.ImageLoader;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.e4.ui.model.application.ui.basic.MPart;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
@@ -75,7 +76,7 @@ public final class ScreenshotTools {
 	}
 
 	private static <T> McpToolResult onUi(Supplier<T> work, Function<T, String> render) {
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 		}
 		CompletableFuture<T> pending = new CompletableFuture<>();
@@ -138,7 +139,7 @@ public final class ScreenshotTools {
 		}
 
 		private static JsonObject collect(boolean includeAvailableViews, String filter, int maxResults) {
-			Display display = PlatformUI.getWorkbench().getDisplay();
+			Display display = Workbenches.display();
 			JsonArray shells = new JsonArray();
 			Shell[] ordered = display.getShells();
 			for (int i = 0; i < ordered.length; i++) {
@@ -153,7 +154,13 @@ public final class ScreenshotTools {
 						.put("bounds", bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 			}
 			JsonArray parts = new JsonArray();
-			IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+			for (MPart part : Workbenches.e4Parts()) {
+				parts.add(new JsonObject().put("id", part.getElementId()) //$NON-NLS-1$
+						.put("title", part.getLocalizedLabel()) //$NON-NLS-1$
+						.put("kind", "part") //$NON-NLS-1$ //$NON-NLS-2$
+						.put("visible", Boolean.valueOf(((Control) part.getWidget()).isVisible()))); //$NON-NLS-1$
+			}
+			IWorkbenchWindow window = Workbenches.ide() ? PlatformUI.getWorkbench().getActiveWorkbenchWindow() : null;
 			IWorkbenchPage page = window == null ? null : window.getActivePage();
 			if (page != null) {
 				for (IWorkbenchPartReference reference : allReferences(page)) {
@@ -164,7 +171,7 @@ public final class ScreenshotTools {
 				}
 			}
 			JsonObject result = new JsonObject().put("shells", shells).put("parts", parts); //$NON-NLS-1$ //$NON-NLS-2$
-			if (includeAvailableViews) {
+			if (includeAvailableViews && Workbenches.ide()) {
 				addAvailableViews(result, filter, maxResults);
 			}
 			String unsupported = unsupportedReason();
@@ -387,7 +394,7 @@ public final class ScreenshotTools {
 		private static Encoding capture(String target, String partId, String shellTitle, boolean activate,
 				int maxWidth, String outputPath, boolean includeBase64, boolean includeToolbar, Object highlights,
 				boolean sameTurn, boolean suppressCaret) {
-			Display display = PlatformUI.getWorkbench().getDisplay();
+			Display display = Workbenches.display();
 			Rectangle area;
 			// the bounds of what the caller named, which the answer reports even when
 			// the capture covers less
@@ -1107,6 +1114,9 @@ public final class ScreenshotTools {
 		}
 
 		static Control findPart(String partId, boolean activate) {
+			if (!Workbenches.ide()) {
+				return Workbenches.e4Part(partId);
+			}
 			IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 			IWorkbenchPage page = window == null ? null : window.getActivePage();
 			if (page == null) {

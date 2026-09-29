@@ -8,7 +8,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 import org.eclipse.swt.widgets.Display;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.McpToolResult;
 import com.vogella.eclipse.mcp.core.UiDispatch;
@@ -42,7 +41,7 @@ public final class UiThread {
 	 * popup survives between them.
 	 */
 	static boolean onUiThread() {
-		return PlatformUI.isWorkbenchRunning() && PlatformUI.getWorkbench().getDisplay() == Display.getCurrent();
+		return Workbenches.running() && Workbenches.display() == Display.getCurrent();
 	}
 
 	/**
@@ -58,7 +57,7 @@ public final class UiThread {
 		if (onUiThread()) {
 			work.run();
 		} else {
-			PlatformUI.getWorkbench().getDisplay().asyncExec(work);
+			Workbenches.display().asyncExec(work);
 		}
 	}
 
@@ -67,7 +66,7 @@ public final class UiThread {
 		try {
 			return new Outcome(work.get(), null);
 		} catch (Throwable e) {
-			return new Outcome(null, "The request failed: " + e); //$NON-NLS-1$
+			return new Outcome(null, Workbenches.describe(e));
 		}
 	}
 
@@ -94,11 +93,11 @@ public final class UiThread {
 	 * really an exception it could have named.
 	 */
 	private static CompletableFuture<JsonObject> submit(Supplier<JsonObject> work) {
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return null;
 		}
 		CompletableFuture<JsonObject> pending = new CompletableFuture<>();
-		PlatformUI.getWorkbench().getDisplay().asyncExec(() -> completeFrom(pending, work));
+		Workbenches.display().asyncExec(() -> completeFrom(pending, work));
 		return pending;
 	}
 
@@ -127,8 +126,7 @@ public final class UiThread {
 			Thread.currentThread().interrupt();
 			return "The request was interrupted."; //$NON-NLS-1$
 		}
-		Throwable cause = e.getCause() == null ? e : e.getCause();
-		return "The request failed: " + cause; //$NON-NLS-1$
+		return Workbenches.describe(e.getCause() == null ? e : e.getCause());
 	}
 
 	/**
@@ -163,11 +161,11 @@ public final class UiThread {
 	static final UiDispatch.Executor EXECUTOR = new UiDispatch.Executor() {
 		@Override
 		public <T> T call(Callable<T> work, int timeoutSeconds) throws Exception {
-			if (!PlatformUI.isWorkbenchRunning() || onUiThread()) {
+			if (!Workbenches.running() || onUiThread()) {
 				return work.call();
 			}
 			CompletableFuture<T> pending = new CompletableFuture<>();
-			PlatformUI.getWorkbench().getDisplay().asyncExec(() -> {
+			Workbenches.display().asyncExec(() -> {
 				if (pending.isDone()) {
 					return;
 				}

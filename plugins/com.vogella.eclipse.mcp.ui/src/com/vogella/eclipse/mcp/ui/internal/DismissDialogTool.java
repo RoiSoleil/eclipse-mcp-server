@@ -15,8 +15,6 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
-import org.eclipse.ui.IWorkbenchWindow;
-import org.eclipse.ui.PlatformUI;
 
 import com.vogella.eclipse.mcp.core.IMcpTool;
 import com.vogella.eclipse.mcp.core.McpToolResult;
@@ -57,7 +55,7 @@ public final class DismissDialogTool implements IMcpTool {
 
 	@Override
 	public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
-		if (!PlatformUI.isWorkbenchRunning()) {
+		if (!Workbenches.running()) {
 			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
 		}
 		ToolArguments args = ToolArguments.of(arguments);
@@ -95,7 +93,7 @@ public final class DismissDialogTool implements IMcpTool {
 	}
 
 	private static JsonObject dismiss(String shellTitle, String button, boolean dryRun) {
-		Display display = PlatformUI.getWorkbench().getDisplay();
+		Display display = Workbenches.display();
 		Shell shell = find(display, shellTitle);
 		if (shell == null) {
 			return new JsonObject().put("dismissed", Boolean.FALSE) //$NON-NLS-1$
@@ -162,8 +160,7 @@ public final class DismissDialogTool implements IMcpTool {
 	}
 
 	private static Shell mainShell(Display display) {
-		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-		return window == null ? null : window.getShell();
+		return Workbenches.activeWindowShell();
 	}
 
 	private static boolean hasTable(Composite parent) {

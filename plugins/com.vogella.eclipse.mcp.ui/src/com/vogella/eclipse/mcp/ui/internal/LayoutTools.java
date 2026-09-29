@@ -73,7 +73,7 @@ public final class LayoutTools {
 
 		private static JsonObject apply(String shellTitle, Integer x, Integer y, Integer width, Integer height,
 				Boolean maximized) {
-			Display display = PlatformUI.getWorkbench().getDisplay();
+			Display display = Workbenches.display();
 			Shell shell = ScreenshotTools.Capture.findShell(display, shellTitle);
 			if (shell == null) {
 				return new JsonObject().put("changed", Boolean.FALSE) //$NON-NLS-1$

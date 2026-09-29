@@ -90,7 +90,7 @@ public final class ImportProjectTool implements IMcpTool {
 		if (!PlatformUI.isWorkbenchRunning()) {
 			// SmartImportJob reaches the working set manager through PlatformUI on every
 			// project it creates, without checking whether any working set was asked for
-			return McpToolResult.error("There is no running workbench."); //$NON-NLS-1$
+			return McpToolResult.error(Workbenches.noIde());
 		}
 		ToolArguments args = ToolArguments.of(arguments);
 		String location = args.getString("location"); //$NON-NLS-1$
