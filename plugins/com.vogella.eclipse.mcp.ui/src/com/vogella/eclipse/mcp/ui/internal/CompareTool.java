@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -18,6 +19,7 @@ import org.eclipse.compare.SharedDocumentAdapter;
 import org.eclipse.compare.structuremergeviewer.DiffNode;
 import org.eclipse.compare.structuremergeviewer.Differencer;
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFileState;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IAdaptable;
@@ -56,7 +58,7 @@ public final class CompareTool implements IMcpTool {
 
 	@Override
 	public String getDescription() {
-		return "Opens the Eclipse compare editor on a workspace file against another file, against content you supply, or against a Git revision, so a person can review a change side by side with syntax colouring and the structural Java compare instead of reading a patch in chat. Comparing against 'content' is the way to show a proposed edit before anything is written. Both sides are READ ONLY: this opens a view of a difference and never modifies a file. CHANGES WHAT THE IDE SHOWS. With the preference org.eclipse.compare.UnifiedDiff set, the file opens in its own editor instead and the difference is drawn into it; 'unifiedDiff' in the answer says which. Comparing against a revision needs the org.eclipse.jgit bundle, which every Eclipse with EGit has and a bare Platform SDK does not."; //$NON-NLS-1$
+		return "Opens the Eclipse compare editor on a workspace file against another file, against content you supply, against a Git revision, or against a version from its local history, so a person can review a change side by side with syntax colouring and the structural Java compare instead of reading a patch in chat. Comparing against 'content' is the way to show a proposed edit before anything is written. Both sides are READ ONLY: this opens a view of a difference and never modifies a file. CHANGES WHAT THE IDE SHOWS. With the preference org.eclipse.compare.UnifiedDiff set, the file opens in its own editor instead and the difference is drawn into it; 'unifiedDiff' in the answer says which. Comparing against a revision needs the org.eclipse.jgit bundle, which every Eclipse with EGit has and a bare Platform SDK does not."; //$NON-NLS-1$
 	}
 
 	@Override
@@ -70,6 +72,7 @@ public final class CompareTool implements IMcpTool {
 				    "right":      {"type":"string","description":"Workspace path of the file to compare it against."},
 				    "content":    {"type":"string","description":"Text to compare it against, for reviewing a proposed edit."},
 				    "revision":   {"type":"string","description":"Git revision to compare it against, e.g. HEAD, HEAD~1, a branch, a tag or a commit id."},
+				    "historyTimestamp": {"type":"integer","description":"Local history version to compare it against, by the timestamp eclipse_get_local_history reports."},
 				    "leftLabel":  {"type":"string","description":"Label over the left side. Defaults to the workspace path."},
 				    "rightLabel": {"type":"string","description":"Label over the right side. Defaults to what the right side is."},
 				    "activate":   {"type":"boolean","default":true,"description":"Bring the compare editor to the front."}
@@ -88,10 +91,13 @@ public final class CompareTool implements IMcpTool {
 		String rightPath = args.getString("right"); //$NON-NLS-1$
 		String content = args.getString("content"); //$NON-NLS-1$
 		String revision = args.getString("revision"); //$NON-NLS-1$
-		int given = (rightPath == null ? 0 : 1) + (content == null ? 0 : 1) + (revision == null ? 0 : 1);
+		Object historyTimestamp = arguments.get("historyTimestamp"); //$NON-NLS-1$
+		int given = (rightPath == null ? 0 : 1) + (content == null ? 0 : 1) + (revision == null ? 0 : 1)
+				+ (historyTimestamp == null ? 0 : 1);
 		if (given != 1) {
 			return McpToolResult.error(
-					"Give exactly one of 'right', 'content' or 'revision' to compare '%s' against.".formatted(leftPath)); //$NON-NLS-1$
+					"Give exactly one of 'right', 'content', 'revision' or 'historyTimestamp' to compare '%s' against." //$NON-NLS-1$
+							.formatted(leftPath));
 		}
 
 		IFile left = file(leftPath);
@@ -127,6 +133,24 @@ public final class CompareTool implements IMcpTool {
 			rightBytes = content.getBytes(StandardCharsets.UTF_8);
 			rightElement = new TextElement(left.getName(), left.getFileExtension(), rightBytes);
 			rightDescription = "supplied content"; //$NON-NLS-1$
+		} else if (historyTimestamp instanceof Number timestamp) {
+			IFileState state = historyState(left, timestamp.longValue(), monitor);
+			if (state == null) {
+				return McpToolResult.error(
+						"'%s' has no local history version with timestamp %d. List the versions with eclipse_get_local_history." //$NON-NLS-1$
+								.formatted(leftPath, Long.valueOf(timestamp.longValue())));
+			}
+			try (InputStream stream = state.getContents()) {
+				rightBytes = stream.readAllBytes();
+			} catch (CoreException | IOException e) {
+				return McpToolResult.error("Could not read the local history of '%s': %s".formatted(leftPath, //$NON-NLS-1$
+						e.getMessage()));
+			}
+			String when = Instant.ofEpochMilli(state.getModificationTime()).toString();
+			rightElement = new TextElement(left.getName() + " " + when, left.getFileExtension(), rightBytes); //$NON-NLS-1$
+			rightDescription = "local history %s".formatted(when); //$NON-NLS-1$
+		} else if (historyTimestamp != null) {
+			return McpToolResult.error("'historyTimestamp' has to be a number."); //$NON-NLS-1$
 		} else {
 			GitContent.Blob blob;
 			try {
@@ -179,6 +203,19 @@ public final class CompareTool implements IMcpTool {
 		CompareUI.openCompareEditor(input, activate);
 		return report.put("opened", Boolean.TRUE).put("editor", input.getTitle()) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("unifiedDiff", Boolean.valueOf(unifiedDiff)); //$NON-NLS-1$
+	}
+
+	private static IFileState historyState(IFile file, long timestamp, IProgressMonitor monitor) {
+		try {
+			for (IFileState state : file.getHistory(monitor)) {
+				if (state.getModificationTime() == timestamp) {
+					return state;
+				}
+			}
+		} catch (CoreException e) {
+			// reported as a missing version
+		}
+		return null;
 	}
 
 	private static IFile file(String path) {
