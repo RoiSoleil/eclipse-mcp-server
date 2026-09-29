@@ -198,6 +198,7 @@ Tools marked ✎ change something; the rest are read-only.
 | `eclipse_list_ui_targets`, `eclipse_get_widget_tree`, `eclipse_inspect_widget` | Shells, parts and widgets, with bounds and CSS styling |
 | ✎ `eclipse_dismiss_dialog` | Answer an open dialog |
 | `eclipse_list_commands`, ✎ `eclipse_run_workbench_command` | List and run workbench commands |
+| ✎ `eclipse_select_menu_item` | Pick a main menu or context menu entry by its labels, without a native menu appearing |
 | ✎ `eclipse_show_view`, `eclipse_hide_view`, `eclipse_move_part`, `eclipse_set_part_state` | Arrange views |
 | `eclipse_list_perspectives`, ✎ `eclipse_switch_perspective`, `eclipse_reset_perspective` | Perspectives |
 | ✎ `eclipse_manage_window`, `eclipse_set_shell_bounds`, `eclipse_set_ide_visibility`, `eclipse_set_model_visibility` | Windows, their bounds, and what of the IDE is visible |
