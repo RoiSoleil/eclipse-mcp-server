@@ -55,6 +55,7 @@ If the port is taken, the server stays down and the page says why; it never move
 
 The server starts through a declarative service, so an RCP application needs `org.apache.felix.scr` and a workspace, but no `org.eclipse.ui.startup`.
 Install `com.vogella.eclipse.mcp.core`, `com.vogella.eclipse.mcp.server` and the third party bundles the feature lists; the other bundles are optional and each only adds its own tools.
+`com.vogella.eclipse.mcp.ui` also resolves in a pure E4 application, which then gets the widget, screenshot, keyboard, dialog and settle tools, with parts named by their model element id; the tools built on editors, views, perspectives and workbench commands need the 3.x workbench and say so.
 Without the ui bundle there is no preference page, so enable the server in `plugin_customization.ini`:
 
 ```
