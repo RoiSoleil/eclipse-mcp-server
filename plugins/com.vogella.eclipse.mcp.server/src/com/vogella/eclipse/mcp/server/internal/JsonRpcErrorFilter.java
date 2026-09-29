@@ -55,12 +55,15 @@ public final class JsonRpcErrorFilter implements Filter {
 			return body;
 		}
 		String message = String.valueOf(error.get("message")); //$NON-NLS-1$
+		Object code = error.get("code"); //$NON-NLS-1$
 		if (message.startsWith("Session not found")) { //$NON-NLS-1$
 			message += ". The server has restarted or ended that session; initialize a new one."; //$NON-NLS-1$
 		} else if (message.startsWith("Session ID required")) { //$NON-NLS-1$
 			message += ". Send the Mcp-Session-Id the initialize response returned."; //$NON-NLS-1$
+			// the SDK says method not found, but the method exists and the request is what is wrong
+			code = Integer.valueOf(-32600);
 		}
-		JsonObject rpcError = new JsonObject().put("code", error.get("code")).put("message", message); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		JsonObject rpcError = new JsonObject().put("code", code).put("message", message); //$NON-NLS-1$ //$NON-NLS-2$
 		return new JsonObject().put("jsonrpc", "2.0").put("id", null).put("error", rpcError).toString(); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 	}
 

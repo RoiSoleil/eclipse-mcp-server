@@ -251,6 +251,18 @@ class McpServerServiceTest {
 	}
 
 	@Test
+	void answersAMissingSessionIdAsAnInvalidRequest() throws Exception {
+		HttpResponse<String> response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(endpoint().url()))
+				.header("Authorization", "Bearer " + endpoint().token()).header("Content-Type", "application/json")
+				.header("Accept", "application/json, text/event-stream")
+				.POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"))
+				.build(), HttpResponse.BodyHandlers.ofString());
+
+		assertEquals(400, response.statusCode());
+		assertTrue(response.body().contains("-32600"), response.body());
+	}
+
+	@Test
 	void reportsSchemaViolationsInEnglishWhateverTheLocale() throws Exception {
 		Locale previous = Locale.getDefault();
 		Locale.setDefault(Locale.GERMAN);

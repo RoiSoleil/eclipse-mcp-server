@@ -7,6 +7,7 @@ import java.util.Map;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
@@ -159,6 +160,10 @@ public final class SelectMenuItemTool implements IMcpTool {
 	}
 
 	private static Menu menuBar() {
+		if (!Workbenches.ide()) {
+			Shell shell = Workbenches.activeWindowShell();
+			return shell == null ? null : shell.getMenuBar();
+		}
 		IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
 		if (window == null && PlatformUI.getWorkbench().getWorkbenchWindows().length > 0) {
 			// no active window is what an IDE that is not in front has
@@ -168,6 +173,14 @@ public final class SelectMenuItemTool implements IMcpTool {
 	}
 
 	private static Menu contextMenu(String partId, JsonObject result) {
+		if (!Workbenches.ide()) {
+			Control control = partId == null ? null : Workbenches.e4Part(partId);
+			if (control == null) {
+				return null;
+			}
+			result.put("part", partId); //$NON-NLS-1$
+			return firstMenu(control);
+		}
 		IWorkbenchPart part = SelectionTools.partFor(partId);
 		if (part == null) {
 			return null;
@@ -175,6 +188,23 @@ public final class SelectMenuItemTool implements IMcpTool {
 		result.put("part", part.getSite().getId()); //$NON-NLS-1$
 		Control control = ContextMenuTool.viewerControl(part);
 		return control == null ? null : ContextMenuTool.detect(control);
+	}
+
+	/** An E4 part registers its context menu on a control inside it, often the viewer's, not on the part itself. */
+	private static Menu firstMenu(Control control) {
+		Menu menu = ContextMenuTool.detect(control);
+		if (menu != null) {
+			return menu;
+		}
+		if (control instanceof org.eclipse.swt.widgets.Composite composite) {
+			for (Control child : composite.getChildren()) {
+				menu = firstMenu(child);
+				if (menu != null) {
+					return menu;
+				}
+			}
+		}
+		return null;
 	}
 
 	private static MenuItem find(Menu menu, String wanted) {

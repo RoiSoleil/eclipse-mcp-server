@@ -335,6 +335,8 @@ public final class WidgetTools {
 					.put("widgets", widgets); //$NON-NLS-1$
 		}
 
+		private static final int MAX_TEXT = 200;
+
 		private static void walk(Widget widget, String path, int depth, int maxDepth, String needle, int maxResults,
 				boolean includeItems, boolean includeRows, JsonArray into, int[] total) {
 			boolean wanted = needle == null
@@ -346,6 +348,7 @@ public final class WidgetTools {
 							.put("kind", kindOf(widget)) //$NON-NLS-1$
 							.put("class", widget.getClass().getName()) //$NON-NLS-1$
 							.put("text", textOf(widget)) //$NON-NLS-1$
+							.put("toolTip", toolTipOf(widget)) //$NON-NLS-1$
 							.put("bounds", bounds(widget)) //$NON-NLS-1$
 							.put("visible", widget instanceof Control control ? Boolean.valueOf(control.isVisible()) //$NON-NLS-1$
 									: null);
@@ -462,14 +465,38 @@ public final class WidgetTools {
 			};
 		}
 
-		/** An item's label, which is usually the only readable thing about it. */
+		/** A widget's label or content, which is usually the only readable thing about it. */
 		private static String textOf(Widget widget) {
-			return widget instanceof org.eclipse.swt.widgets.Item item
-					&& item.getText() != null && !item.getText().isEmpty() ? item.getText() : null;
+			String text = switch (widget) {
+			case org.eclipse.swt.widgets.Item item -> item.getText();
+			case org.eclipse.swt.widgets.Label label -> label.getText();
+			case org.eclipse.swt.widgets.Button button -> button.getText();
+			case org.eclipse.swt.widgets.Text field -> field.getText();
+			case org.eclipse.swt.custom.StyledText field -> field.getText();
+			case org.eclipse.swt.widgets.Combo combo -> combo.getText();
+			case org.eclipse.swt.widgets.Link link -> link.getText();
+			case org.eclipse.swt.widgets.Group group -> group.getText();
+			case org.eclipse.swt.custom.CLabel label -> label.getText();
+			default -> null;
+			};
+			if (text == null || text.isEmpty()) {
+				return null;
+			}
+			// an editor's whole document would drown the tree it is one node of
+			return text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) + "..." : text; //$NON-NLS-1$
+		}
+
+		/** The tooltip, which is the only thing that tells icon-only tool items apart. */
+		private static String toolTipOf(Widget widget) {
+			String tip = switch (widget) {
+			case org.eclipse.swt.widgets.ToolItem item -> item.getToolTipText();
+			case org.eclipse.swt.widgets.Control control -> control.getToolTipText();
+			default -> null;
+			};
+			return tip == null || tip.isEmpty() ? null : tip;
 		}
 	}
 
-	/** Reports one widget, its ancestry and what the CSS engine computed for it. */
 	/** Opens or closes a tree row, so what is under it becomes addressable. */
 	public static final class ExpandRow implements IMcpTool {
 

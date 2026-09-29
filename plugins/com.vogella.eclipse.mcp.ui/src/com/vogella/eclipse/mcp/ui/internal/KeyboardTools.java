@@ -10,9 +10,11 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
+import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IWorkbenchPage;
@@ -77,7 +79,7 @@ public final class KeyboardTools {
 
 		@Override
 		public String getDescription() {
-			return "Inserts text at the caret of the active, or named, text editor by editing its document, the way a typed key ends up in the file: the caret moves behind the text and the editor becomes dirty. CHANGES THE DOCUMENT. This is the deterministic way to set up an editor state, independent of focus and keyboard layout, so prefer it over eclipse_press_key for entering characters. A current selection is replaced. It does NOT open content assist or run any key binding; use eclipse_press_key for Ctrl+Space and the like. The answer reports the new caret offset and line. Nothing is saved."; //$NON-NLS-1$
+			return "Inserts text at the caret of the active, or named, text editor by editing its document, the way a typed key ends up in the file: the caret moves behind the text and the editor becomes dirty. CHANGES THE DOCUMENT. This is the deterministic way to set up an editor state, independent of focus and keyboard layout, so prefer it over eclipse_press_key for entering characters. A current selection is replaced. It does NOT open content assist or run any key binding; use eclipse_press_key for Ctrl+Space and the like. The answer reports the new caret offset and line. Nothing is saved. In an application without the IDE workbench, such as a pure E4 RCP application, there are no text editors, so it inserts at the caret of the focused Text or StyledText instead."; //$NON-NLS-1$
 		}
 
 		@Override
@@ -102,6 +104,9 @@ public final class KeyboardTools {
 				return McpToolResult.error("Give the 'text' to insert."); //$NON-NLS-1$
 			}
 			String part = args.getString("part"); //$NON-NLS-1$
+			if (!Workbenches.ide() && Workbenches.running()) {
+				return UiThread.call(UI_TIMEOUT_SECONDS, () -> intoFocusedWidget(text));
+			}
 			return UiThread.call(UI_TIMEOUT_SECONDS, () -> {
 				ITextEditor editor = textEditor(part);
 				IDocument document = editor.getDocumentProvider().getDocument(editor.getEditorInput());
@@ -137,6 +142,30 @@ public final class KeyboardTools {
 						.put("note", "Inserted through the document. The editor is dirty and not saved."); //$NON-NLS-1$ //$NON-NLS-2$
 			});
 		}
+	}
+
+	/** Without the IDE there are no text editors, so the text goes in at the caret of the focused text widget. */
+	private static JsonObject intoFocusedWidget(String text) {
+		Control focus = Workbenches.display().getFocusControl();
+		int caret;
+		switch (focus) {
+		case StyledText styled -> {
+			caret = styled.getSelectionRange().x + text.length();
+			styled.insert(text);
+			styled.setCaretOffset(caret);
+		}
+		case Text field -> {
+			field.insert(text);
+			caret = field.getCaretPosition();
+		}
+		case null, default -> throw new IllegalStateException(
+				"Without the IDE workbench this inserts into the focused text widget, and the focus is on %s. Use eclipse_set_widget_text to address a widget by its path." //$NON-NLS-1$
+						.formatted(focus == null ? "nothing" : focus.getClass().getSimpleName())); //$NON-NLS-1$
+		}
+		return new JsonObject().put("widget", focus.getClass().getName()) //$NON-NLS-1$
+				.put("inserted", Integer.valueOf(text.length())) //$NON-NLS-1$
+				.put("caretOffset", Integer.valueOf(caret)) //$NON-NLS-1$
+				.put("note", "Inserted at the caret of the focused text widget, since this application has no text editors."); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	/** Posts real key events to the focused control. */

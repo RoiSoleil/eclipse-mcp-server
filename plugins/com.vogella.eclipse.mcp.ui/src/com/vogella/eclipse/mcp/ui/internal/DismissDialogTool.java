@@ -109,7 +109,7 @@ public final class DismissDialogTool implements IMcpTool {
 		if (dryRun) {
 			return result.put("dismissed", Boolean.FALSE) //$NON-NLS-1$
 					.put("note", //$NON-NLS-1$
-							"Nothing was touched. Pass dryRun false to close it, or name a button to press."); //$NON-NLS-1$
+							"Nothing was touched. Pass dryRun false, with a button to press it or without one to close the dialog."); //$NON-NLS-1$
 		}
 		if (button == null) {
 			shell.close();

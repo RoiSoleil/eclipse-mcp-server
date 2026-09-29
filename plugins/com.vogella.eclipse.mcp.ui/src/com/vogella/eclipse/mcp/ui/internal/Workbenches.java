@@ -27,7 +27,7 @@ import org.osgi.framework.ServiceReference;
 public final class Workbenches {
 
 	/** The refusal of a tool that needs the IDE's workbench when only an E4 one is running. */
-	static final String NEEDS_IDE = "This tool needs the Eclipse IDE workbench (org.eclipse.ui), and this application runs a pure E4 workbench. The widget, screenshot, keyboard, dialog and part tools work there; the ones built on editors, views, perspectives and workbench commands do not."; //$NON-NLS-1$
+	static final String NEEDS_IDE = "This tool needs the Eclipse IDE workbench (org.eclipse.ui), and this application runs a pure E4 workbench. The widget, screenshot, keyboard, menu, dialog and part tools work there; the ones built on editors, views, perspectives and workbench commands do not."; //$NON-NLS-1$
 
 	private Workbenches() {
 	}
