@@ -553,6 +553,10 @@ Do not add an environment check back to `unsupportedReason`: `WAYLAND_DISPLAY` a
 `IPackageFragmentRoot.toString()` prints every package it contains, which turned one rename refusal into 221 lines with the useful advice at the bottom.
 Use `getElementName()`, `getFullyQualifiedName()` or `JavaModelSupport.describe`.
 
+**Profiles leave the server out unless asked, and say how much they left out.**
+Sampling and flight recording through this server measure the server too: the sampler thread, the tool call and the request that carried it.
+`ServerFrames` drops stacks on the server's own threads or running its code, elides server frames that only dispatched the application's work so the handler keeps its time, and every answer reports both counts; `includeMcpFrames` turns it off for profiling the server itself.
+
 **The sampler must not need the UI thread or a workspace lock.**
 It exists to diagnose freezes, so anything that queues behind one is useless.
 `ThreadMXBean` does not require the sampled thread to be responsive; do not replace it with anything that runs on the Display.

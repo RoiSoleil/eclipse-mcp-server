@@ -17,10 +17,11 @@ import jdk.jfr.Configuration;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
-import jdk.jfr.consumer.RecordedStackTrace;
+import jdk.jfr.consumer.RecordedThread;
 import jdk.jfr.consumer.RecordingFile;
 
 import com.vogella.eclipse.mcp.core.FlameGraph;
+import com.vogella.eclipse.mcp.core.ServerFrames;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -155,6 +156,8 @@ final class FlightRecording {
 		long gcCount = 0;
 		long longestPauseNanos = 0;
 		int read = 0;
+		int serverDropped = 0;
+		int serverElided = 0;
 		boolean truncated = false;
 
 		try (RecordingFile recordingFile = new RecordingFile(file)) {
@@ -167,15 +170,37 @@ final class FlightRecording {
 				read++;
 				String type = event.getEventType().getName();
 				eventCounts.merge(type, Integer.valueOf(1), (a, b) -> Integer.valueOf(a.intValue() + b.intValue()));
+				List<RecordedFrame> frames = event.getStackTrace() == null ? List.of() : event.getStackTrace().getFrames();
+				if (!options.includeServer() && !frames.isEmpty()) {
+					RecordedThread thread = event.hasField("eventThread") ? event.getThread("eventThread") : null; //$NON-NLS-1$ //$NON-NLS-2$
+					List<String> classes = new ArrayList<>(frames.size());
+					for (RecordedFrame frame : frames) {
+						classes.add(frame.getMethod() == null ? null : frame.getMethod().getType().getName());
+					}
+					switch (ServerFrames.classify(thread == null ? null : thread.getJavaName(), classes)) {
+					case DROP -> {
+						serverDropped++;
+						continue;
+					}
+					case ELIDE -> {
+						serverElided++;
+						frames = frames.stream().filter(frame -> frame.getMethod() == null
+								|| !ServerFrames.isOwn(frame.getMethod().getType().getName())).toList();
+					}
+					case KEEP -> {
+						// the application's own
+					}
+					}
+				}
 				// filter on the WHOLE stack and render afterwards: matching the rendered
 				// text made stackDepth silently narrow what the filter could see, so a
 				// deep frame that was being searched for could not be found at all
-				if (!matches(event.getStackTrace(), options.frameFilter())) {
+				if (!matches(frames, options.frameFilter())) {
 					continue;
 				}
 				matched++;
 				matchedCounts.merge(type, Integer.valueOf(1), (a, b) -> Integer.valueOf(a.intValue() + b.intValue()));
-				String stack = render(event.getStackTrace(), options.stackDepth());
+				String stack = render(frames, options.stackDepth());
 				if (ALLOCATION_SAMPLE.equals(type)) {
 					long weight = event.hasField("weight") ? event.getLong("weight") : 0; //$NON-NLS-1$ //$NON-NLS-2$
 					add(byClass, className(event), weight);
@@ -186,7 +211,7 @@ final class FlightRecording {
 						}
 					}
 				} else if (EXECUTION_SAMPLE.equals(type) && stack != null) {
-					add(hotMethods, topFrame(event.getStackTrace()), 1);
+					add(hotMethods, topFrame(frames), 1);
 				} else if (type.startsWith("jdk.GC") && event.getDuration() != null) { //$NON-NLS-1$
 					gcCount++;
 					longestPauseNanos = Math.max(longestPauseNanos, event.getDuration().toNanos());
@@ -196,6 +221,8 @@ final class FlightRecording {
 
 		JsonObject result = new JsonObject().put("eventsRead", Integer.valueOf(read)) //$NON-NLS-1$
 				.put("eventsMatched", Integer.valueOf(matched)) //$NON-NLS-1$
+				.put("serverEventsExcluded", options.includeServer() ? null : Integer.valueOf(serverDropped)) //$NON-NLS-1$
+				.put("serverFramesElidedFrom", options.includeServer() ? null : Integer.valueOf(serverElided)) //$NON-NLS-1$
 				.put("eventsTruncated", Boolean.valueOf(truncated)) //$NON-NLS-1$
 				.put("allocationByClass", top(byClass, options.topClasses(), "class")) //$NON-NLS-1$ //$NON-NLS-2$
 				.put("allocationByStack", top(byStack, options.topStacks(), "stack")) //$NON-NLS-1$ //$NON-NLS-2$
@@ -217,7 +244,7 @@ final class FlightRecording {
 	}
 
 	/** What to aggregate, and how much of it to report. */
-	record Aggregation(int topClasses, int topStacks, int stackDepth, String frameFilter) {
+	record Aggregation(int topClasses, int topStacks, int stackDepth, String frameFilter, boolean includeServer) {
 	}
 
 	private static void add(Map<String, long[]> into, String key, long weight) {
@@ -262,11 +289,11 @@ final class FlightRecording {
 		}
 	}
 
-	private static String topFrame(RecordedStackTrace stack) {
-		if (stack == null || stack.getFrames().isEmpty()) {
+	private static String topFrame(List<RecordedFrame> frames) {
+		if (frames.isEmpty()) {
 			return null;
 		}
-		return frame(stack.getFrames().get(0));
+		return frame(frames.get(0));
 	}
 
 	/**
@@ -276,14 +303,11 @@ final class FlightRecording {
 	 * caller who narrowed the display was also narrowing the search without being
 	 * told, and asking for a deep frame with a shallow depth returned nothing.
 	 */
-	private static boolean matches(RecordedStackTrace stack, String filter) {
+	private static boolean matches(List<RecordedFrame> frames, String filter) {
 		if (filter == null) {
 			return true;
 		}
-		if (stack == null) {
-			return false;
-		}
-		for (RecordedFrame frame : stack.getFrames()) {
+		for (RecordedFrame frame : frames) {
 			String rendered = frame(frame);
 			if (rendered != null && rendered.contains(filter)) {
 				return true;
@@ -292,11 +316,10 @@ final class FlightRecording {
 		return false;
 	}
 
-	private static String render(RecordedStackTrace stack, int depth) {
-		if (stack == null || stack.getFrames().isEmpty()) {
+	private static String render(List<RecordedFrame> frames, int depth) {
+		if (frames.isEmpty()) {
 			return null;
 		}
-		List<RecordedFrame> frames = stack.getFrames();
 		StringBuilder text = new StringBuilder();
 		for (int i = 0; i < Math.min(depth, frames.size()); i++) {
 			if (i > 0) {

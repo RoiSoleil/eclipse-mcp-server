@@ -4,6 +4,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 import com.vogella.eclipse.mcp.core.FlameGraph;
+import com.vogella.eclipse.mcp.core.ServerFrames;
 import com.vogella.eclipse.mcp.core.json.JsonArray;
 import com.vogella.eclipse.mcp.core.json.JsonObject;
 
@@ -235,12 +237,12 @@ public final class SamplingRegistry {
 	 */
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle) {
-		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, null, false);
+		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, null, false, false);
 	}
 
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
 			boolean includeIdle, String frameFilter) {
-		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, frameFilter, false);
+		return aggregate(session, topMethods, minSamples, includeRaw, includeIdle, frameFilter, false, false);
 	}
 
 	/**
@@ -254,10 +256,12 @@ public final class SamplingRegistry {
 	 * question a caller is asking.
 	 */
 	/** The samples a set of options selects, so every view of a session picks the same ones. */
-	private static Selection select(Session session, boolean includeIdle, String frameFilter) {
+	private static Selection select(Session session, boolean includeIdle, String frameFilter, boolean includeServer) {
 		List<Sample> everything = session.snapshot();
 		List<Sample> all = everything;
 		int filtered = 0;
+		int serverDropped = 0;
+		int serverElided = 0;
 		if (frameFilter != null) {
 			String needle = frameFilter.toLowerCase(Locale.ROOT);
 			List<Sample> matching = new ArrayList<>();
@@ -284,10 +288,32 @@ public final class SamplingRegistry {
 				samples.add(sample);
 			}
 		}
-		return new Selection(everything, samples, idle, filtered);
+		// after the idle split, so what is excluded here plus samples adds up to what would be reported
+		if (!includeServer) {
+			List<Sample> kept = new ArrayList<>(samples.size());
+			for (Sample sample : samples) {
+				List<String> classes = new ArrayList<>(sample.stack().length);
+				for (StackTraceElement element : sample.stack()) {
+					classes.add(element.getClassName());
+				}
+				switch (ServerFrames.classify(sample.threadName(), classes)) {
+				case DROP -> serverDropped++;
+				case ELIDE -> {
+					serverElided++;
+					kept.add(new Sample(sample.threadId(), sample.threadName(), sample.state(),
+							Arrays.stream(sample.stack()).filter(e -> !ServerFrames.isOwn(e.getClassName()))
+									.toArray(StackTraceElement[]::new)));
+				}
+				case KEEP -> kept.add(sample);
+				}
+			}
+			samples = kept;
+		}
+		return new Selection(everything, samples, idle, filtered, serverDropped, serverElided);
 	}
 
-	private record Selection(List<Sample> everything, List<Sample> samples, int idle, int filtered) {
+	private record Selection(List<Sample> everything, List<Sample> samples, int idle, int filtered, int serverDropped,
+			int serverElided) {
 	}
 
 	/**
@@ -295,12 +321,15 @@ public final class SamplingRegistry {
 	 * sample count. Built from the same selection the aggregate reports, so the
 	 * picture and the numbers beside it describe one set of samples.
 	 */
-	public static FlameGraph.Builder flame(Session session, boolean includeIdle, String frameFilter) {
+	public static FlameGraph.Builder flame(Session session, boolean includeIdle, String frameFilter,
+			boolean includeServer) {
 		FlameGraph.Builder builder = FlameGraph.builder();
-		for (Sample sample : align(select(session, includeIdle, frameFilter).samples(), session.maxDepth())
+		for (Sample sample : align(select(session, includeIdle, frameFilter, includeServer).samples(), session.maxDepth())
 				.samples()) {
 			StackTraceElement[] stack = sample.stack();
-			List<String> frames = new ArrayList<>(stack.length);
+			List<String> frames = new ArrayList<>(stack.length + 1);
+			// the thread first, so each thread is a branch of its own rather than merged at Thread.run
+			frames.add(FlameGraph.THREAD_PREFIX + threadGroup(sample.threadName()));
 			// outermost first, which is bottom up in the picture
 			for (int i = stack.length - 1; i >= 0; i--) {
 				frames.add(frame(stack[i]));
@@ -311,8 +340,8 @@ public final class SamplingRegistry {
 	}
 
 	public static JsonObject aggregate(Session session, int topMethods, int minSamples, boolean includeRaw,
-			boolean includeIdle, String frameFilter, boolean includeAllThreads) {
-		Selection selection = select(session, includeIdle, frameFilter);
+			boolean includeIdle, String frameFilter, boolean includeAllThreads, boolean includeServer) {
+		Selection selection = select(session, includeIdle, frameFilter, includeServer);
 		List<Sample> everything = selection.everything();
 		List<Sample> samples = selection.samples();
 		int filtered = selection.filtered();
@@ -345,6 +374,10 @@ public final class SamplingRegistry {
 			result.put("intervalWarning", //$NON-NLS-1$
 					"Sampling could not keep the requested %d ms interval and achieved %d ms. Sample fewer threads or ask for a longer interval; note also that sampling itself slows the work being measured, measurably so at short intervals across many threads." //$NON-NLS-1$
 							.formatted(Integer.valueOf(session.intervalMillis()), Long.valueOf(achieved)));
+		}
+		if (!includeServer) {
+			result.put("serverSamplesExcluded", Integer.valueOf(selection.serverDropped())) //$NON-NLS-1$
+					.put("serverFramesElidedFrom", Integer.valueOf(selection.serverElided())); //$NON-NLS-1$
 		}
 		if (frameFilter != null) {
 			result.put("frameFilter", frameFilter) //$NON-NLS-1$
@@ -460,7 +493,22 @@ public final class SamplingRegistry {
 				|| innermost.equals("java.lang.Thread.sleep0") //$NON-NLS-1$
 				|| innermost.equals("java.lang.Thread.sleep") //$NON-NLS-1$
 				|| innermost.startsWith("sun.nio.ch.EPoll.wait") //$NON-NLS-1$
-				|| innermost.startsWith("sun.nio.ch.Net.poll"); //$NON-NLS-1$
+				|| innermost.startsWith("sun.nio.ch.Net.poll") //$NON-NLS-1$
+				|| innermost.startsWith("sun.nio.ch.Net.accept") //$NON-NLS-1$
+				|| innermost.equals("java.lang.ref.Reference.waitForReferencePendingList") //$NON-NLS-1$
+				|| innermost.equals("sun.awt.X11.XToolkit.waitForEvents") //$NON-NLS-1$
+				|| sleepingEventLoop(sample);
+	}
+
+	/** An SWT event loop waiting for input is RUNNABLE in native code, and still idle. */
+	private static boolean sleepingEventLoop(StackTraceElement[] sample) {
+		for (int i = 0; i < Math.min(sample.length, 4); i++) {
+			if ("org.eclipse.swt.widgets.Display".equals(sample[i].getClassName()) //$NON-NLS-1$
+					&& "sleep".equals(sample[i].getMethodName())) { //$NON-NLS-1$
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static JsonArray top(Map<String, Integer> counts, int limit, int samples) {
@@ -693,6 +741,15 @@ public final class SamplingRegistry {
 			}
 			return array;
 		}
+	}
+
+	/** Pool threads differ only by a number, and a branch per worker would split one job into many. */
+	static String threadGroup(String name) {
+		if (name == null) {
+			return "unnamed"; //$NON-NLS-1$
+		}
+		// Eclipse workers append the running job, "Worker-19: Indexing", which is not the thread
+		return name.replaceAll(":.*$", "").replaceAll("([-# ])\\d+$", "$1N").strip(); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 	}
 
 	private static String frame(StackTraceElement element) {

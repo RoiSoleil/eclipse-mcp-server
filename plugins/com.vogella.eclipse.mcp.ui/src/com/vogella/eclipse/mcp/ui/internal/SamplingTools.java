@@ -129,8 +129,9 @@ public final class SamplingTools {
 					    "minSamples":  {"type":"integer","default":2,"minimum":1,"description":"Prune call tree branches seen fewer times than this."},
 					    "includeRawSamples": {"type":"boolean","default":false,"description":"Also return every sample. Large."},
 					    "frameFilter":        {"type":"string","description":"Aggregate only the stacks containing this text in a frame, e.g. a package prefix or one class. Applied when reading, not when sampling, so one session can be re-read from several angles with keepRunning."},
-					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting. Off by default, because otherwise the pooled threads of an idle IDE dominate the result. Turn it ON to diagnose a FREEZE: a frozen thread is usually parked, and the default drops exactly the samples that explain the stall."},
+					    "includeIdleThreads": {"type":"boolean","default":false,"description":"Count threads parked or waiting, including an event loop sleeping in Display.sleep and accept or poll loops. Off by default, because otherwise the pooled threads of an idle IDE dominate the result. Turn it ON to diagnose a FREEZE: a frozen thread is usually parked, and the default drops exactly the samples that explain the stall."},
 					    "includeThreads": {"type":"boolean","default":false,"description":"List every thread that was sampled in byThread, including the parked pool threads. Off by default because on an IDE with seventy threads their state counts are most of the answer and say nothing about where the time went; the totals are reported either way."},
+					    "includeMcpFrames":   {"type":"boolean","default":false,"description":"Keep what this MCP server itself contributed. Off by default: stacks on the server's own threads, stacks whose running code is the server's, and stacks carrying its request machinery are left out and counted in serverSamplesExcluded, and the server frames that only dispatched the application's work, such as a tool running a menu entry on the UI thread, are removed from otherwise kept stacks and counted in serverFramesElidedFrom. Turn it ON to profile the server itself."},
 					    "keepRunning": {"type":"boolean","default":false,"description":"Report the aggregate so far without stopping. With frameFilter this is how one session is read from several angles."},
 					    "show":        {"type":"boolean","default":false,"description":"Also render the samples as a flame graph on a page this IDE serves, and return its URL under traceUrl. The page is dark themed, self contained and held in memory only."},
 					    "open":        {"type":"boolean","default":false,"description":"Open that page in the machine's browser. Implies show. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
@@ -161,10 +162,11 @@ public final class SamplingTools {
 			JsonObject result = SamplingRegistry.aggregate(session, args.getInt("topMethods", 15, 1, 200), //$NON-NLS-1$
 					args.getInt("minSamples", 2, 1, 1000), //$NON-NLS-1$
 					args.getBoolean("includeRawSamples", false), includeIdle, frameFilter, //$NON-NLS-1$
-					args.getBoolean("includeThreads", false)); //$NON-NLS-1$
+					args.getBoolean("includeThreads", false), args.getBoolean("includeMcpFrames", false)); //$NON-NLS-1$ //$NON-NLS-2$
 			boolean open = args.getBoolean("open", false); //$NON-NLS-1$
 			if (open || args.getBoolean("show", false)) { //$NON-NLS-1$
-				TracePage.publishSampling(session, includeIdle, frameFilter, result, open);
+				TracePage.publishSampling(session, includeIdle, frameFilter, args.getBoolean("includeMcpFrames", false), //$NON-NLS-1$
+						result, open);
 			}
 			return McpToolResult.of(result.toString());
 		}

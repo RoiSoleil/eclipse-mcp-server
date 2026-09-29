@@ -26,12 +26,12 @@ final class TracePage {
 	 *                  summary tables so the page and the JSON cannot disagree
 	 */
 	static void publishSampling(SamplingRegistry.Session session, boolean includeIdle, String frameFilter,
-			JsonObject aggregate, boolean open) {
+			boolean includeServer, JsonObject aggregate, boolean open) {
 		if (!TracePages.isAvailable()) {
 			aggregate.put("traceUrl", (Object) null).put("traceNote", TracePages.unavailable()); //$NON-NLS-1$ //$NON-NLS-2$
 			return;
 		}
-		FlameGraph.Builder flame = SamplingRegistry.flame(session, includeIdle, frameFilter);
+		FlameGraph.Builder flame = SamplingRegistry.flame(session, includeIdle, frameFilter, includeServer);
 		String title = "Sampling " + session.id(); //$NON-NLS-1$
 		String subtitle = "%d samples over %d ms at a %d ms interval%s".formatted(Integer.valueOf(flame.stacks()), //$NON-NLS-1$
 				Long.valueOf(session.elapsedMillis()), Integer.valueOf(session.intervalMillis()),

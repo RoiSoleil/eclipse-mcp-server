@@ -114,6 +114,7 @@ public final class FlightRecordingTools {
 					    "stackDepth":   {"type":"integer","default":8,"minimum":1,"maximum":64,"description":"Frames per aggregated call chain. Deeper separates callers that share a top frame; shallower merges them."},
 					    "frameFilter":  {"type":"string","description":"Aggregate only events whose stack contains this text at ANY depth, independent of stackDepth, which cuts the rendering and not the search. Applied when reading, so one recording can be read from several angles; eventsMatched and matchedEventTypes then count what this filter kept, which is how one phase is weighed against another."},
 					    "outputPath":   {"type":"string","description":"Keep the .jfr file at this absolute path, for opening it in JDK Mission Control. Omit to delete it after reading."},
+					    "includeMcpFrames": {"type":"boolean","default":false,"description":"Keep what this MCP server itself contributed. Off by default: events on the server's own threads, events whose running code is the server's, and events carrying its request machinery are left out and counted in serverEventsExcluded, and server frames that only dispatched the application's work are removed from otherwise kept stacks and counted in serverFramesElidedFrom. Turn it ON to profile the server itself. A .jfr file from another JVM has no server frames, so nothing is removed there."},
 					    "show":         {"type":"boolean","default":false,"description":"Also render the allocation stacks as a flame graph on a page this IDE serves, weighted by bytes, and return its URL under traceUrl. Dark themed, self contained, held in memory only."},
 					    "open":         {"type":"boolean","default":false,"description":"Open that page in the machine's browser. Implies show. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
 					  },
@@ -130,7 +131,8 @@ public final class FlightRecordingTools {
 					args.getInt("topClasses", 15, 1, 200), //$NON-NLS-1$
 					args.getInt("topStacks", 10, 1, 100), //$NON-NLS-1$
 					args.getInt("stackDepth", 8, 1, 64), //$NON-NLS-1$
-					args.getString("frameFilter")); //$NON-NLS-1$
+					args.getString("frameFilter"), //$NON-NLS-1$
+					args.getBoolean("includeMcpFrames", false)); //$NON-NLS-1$
 			boolean open = args.getBoolean("open", false); //$NON-NLS-1$
 			boolean show = open || args.getBoolean("show", false); //$NON-NLS-1$
 			String existing = args.getString("file"); //$NON-NLS-1$

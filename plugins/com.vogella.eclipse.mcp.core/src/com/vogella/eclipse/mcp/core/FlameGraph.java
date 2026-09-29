@@ -17,6 +17,9 @@ import java.util.Map;
  */
 public final class FlameGraph {
 
+	/** Marks a frame that names a thread, which the page draws as a branch and the tables leave out. */
+	public static final String THREAD_PREFIX = "thread: "; //$NON-NLS-1$
+
 	private FlameGraph() {
 	}
 
@@ -108,7 +111,7 @@ public final class FlameGraph {
 				collectSelf(child, into);
 			}
 			long own = node.value - below;
-			if (own > 0) {
+			if (own > 0 && !node.frame.startsWith(THREAD_PREFIX)) {
 				into.merge(node.frame, Long.valueOf(own), (a, b) -> Long.valueOf(a.longValue() + b.longValue()));
 			}
 		}
@@ -117,8 +120,10 @@ public final class FlameGraph {
 			for (Node child : node.children.values()) {
 				// merged across every place the frame appears, so recursion does not
 				// split one method into a dozen rows
-				into.merge(child.frame, Long.valueOf(child.value),
-						(a, b) -> Long.valueOf(a.longValue() + b.longValue()));
+				if (!child.frame.startsWith(THREAD_PREFIX)) {
+					into.merge(child.frame, Long.valueOf(child.value),
+							(a, b) -> Long.valueOf(a.longValue() + b.longValue()));
+				}
 				collectTotal(child, into);
 			}
 		}
@@ -223,31 +228,35 @@ public final class FlameGraph {
 		escape(spec.title(), out);
 		out.append("</h1><p class=\"sub\">"); //$NON-NLS-1$
 		escape(spec.subtitle(), out);
-		out.append("</p></header>\n"); //$NON-NLS-1$
-
+		out.append("</p>"); //$NON-NLS-1$
 		if (spec.stats() != null && !spec.stats().isEmpty()) {
-			out.append("<div class=\"stats\">"); //$NON-NLS-1$
+			// a line of facts rather than tiles: none of them says where the cost is
+			out.append("<p class=\"facts\">"); //$NON-NLS-1$
 			for (Stat stat : spec.stats()) {
-				out.append("<div class=\"stat\"><div class=\"k\">"); //$NON-NLS-1$
-				escape(stat.label(), out);
-				out.append("</div><div class=\"v\">"); //$NON-NLS-1$
+				out.append("<span><b>"); //$NON-NLS-1$
 				escape(stat.value(), out);
-				out.append("</div></div>"); //$NON-NLS-1$
+				out.append("</b> "); //$NON-NLS-1$
+				escape(stat.label().toLowerCase(Locale.ROOT), out);
+				out.append("</span>"); //$NON-NLS-1$
 			}
-			out.append("</div>\n"); //$NON-NLS-1$
+			out.append("</p>"); //$NON-NLS-1$
 		}
+		out.append("</header>\n"); //$NON-NLS-1$
 
 		if (spec.flame() == null || spec.flame().isEmpty()) {
 			out.append("<div class=\"empty\">No stacks were recorded, so there is nothing to draw. " //$NON-NLS-1$
 					+ "A profile with no samples usually means the recording was too short, or that every sample was filtered out.</div>\n"); //$NON-NLS-1$
 		} else {
+			out.append("<p id=\"hot\" aria-live=\"polite\"></p>\n"); //$NON-NLS-1$
+			out.append("<div class=\"stage\">\n<aside id=\"rail\" aria-label=\"Where the time sits\"><h2 id=\"railTitle\"></h2><ol id=\"hottest\"></ol></aside>\n"); //$NON-NLS-1$
 			out.append("<section class=\"panel\">\n"); //$NON-NLS-1$
 			out.append("<div class=\"head\">"); //$NON-NLS-1$
-			out.append("<input id=\"find\" type=\"search\" placeholder=\"Highlight frames matching…\" spellcheck=\"false\">"); //$NON-NLS-1$
-			out.append("<button id=\"reset\" type=\"button\">Reset zoom</button>"); //$NON-NLS-1$
+			out.append("<input id=\"find\" type=\"search\" placeholder=\"Highlight frames by name, press / to search\" spellcheck=\"false\">"); //$NON-NLS-1$
+			out.append("<button id=\"reset\" type=\"button\" title=\"Escape\">Reset zoom</button>"); //$NON-NLS-1$
 			out.append("<span id=\"status\"></span>"); //$NON-NLS-1$
-			out.append("</div>\n<div id=\"flame\" role=\"img\" aria-label=\"Flame graph of the recorded stacks\"></div>\n"); //$NON-NLS-1$
-			out.append("</section>\n<div id=\"tip\" hidden></div>\n"); //$NON-NLS-1$
+			out.append("</div>\n<div class=\"bar\"><nav id=\"crumbs\" aria-label=\"Zoom path\"></nav><div id=\"legend\"></div></div>\n"); //$NON-NLS-1$
+			out.append("<div id=\"flame\" role=\"img\" aria-label=\"Flame graph of the recorded stacks\"></div>\n"); //$NON-NLS-1$
+			out.append("</section>\n</div>\n<div id=\"tip\" hidden></div>\n"); //$NON-NLS-1$
 		}
 
 		if (spec.tables() != null && !spec.tables().isEmpty()) {
@@ -338,86 +347,121 @@ public final class FlameGraph {
 	private static final String STYLE = """
 			:root {
 			  color-scheme: dark;
-			  --bg: #0b0d12; --panel: #141821; --panel-2: #191e29;
-			  --line: #232935; --line-soft: #1b202b;
-			  --text: #e8ebf2; --dim: #8b93a7; --faint: #5b6478;
-			  --accent: #7c9cff; --accent-soft: #7c9cff22;
-			  --radius: 12px;
+			  --ink: #1b1834; --panel: #23203f; --raise: #2c2850; --line: #373260;
+			  --text: #eceaf6; --dim: #9d98bd; --faint: #6e6995;
+			  --heat: #ffb347; --heat-soft: #ffb34726;
+			  --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "DejaVu Sans Mono", Menlo, Consolas, monospace;
 			}
 			* { box-sizing: border-box; }
 			html { -webkit-text-size-adjust: 100%; }
 			body {
-			  margin: 0; background: var(--bg); color: var(--text);
-			  font: 13.5px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-			  -webkit-font-smoothing: antialiased;
+			  margin: 0; background: var(--ink); color: var(--text);
+			  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, sans-serif;
 			}
-			.wrap { max-width: 1600px; margin: 0 auto; padding: 0 28px; }
+			.wrap { max-width: 1680px; margin: 0 auto; padding: 0 24px 40px; }
+			button, input { font: inherit; color: inherit; }
+			:focus-visible { outline: 2px solid var(--heat); outline-offset: 2px; }
 
-			header { padding: 30px 0 20px; }
-			h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
-			.sub { margin: 6px 0 0; color: var(--dim); font-size: 13px; }
+			header { padding: 26px 0 14px; }
+			h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+			.sub { margin: 4px 0 0; color: var(--dim); }
+			.facts { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 22px; color: var(--dim); font-size: 13px; }
+			.facts b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-			.stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 22px; }
-			.stat {
-			  flex: 1 1 150px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
-			  border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+			#hot {
+			  margin: 6px 0 16px; padding: 12px 16px; border-left: 3px solid var(--heat);
+			  background: var(--heat-soft); border-radius: 0 8px 8px 0; font-size: 15px; line-height: 1.6;
 			}
-			.stat .k { color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; font-weight: 600; }
-			.stat .v { margin-top: 3px; font-size: 19px; font-weight: 620; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+			#hot:empty { display: none; }
+			#hot b { color: var(--heat); font-weight: 650; }
+			#hot code { font-family: var(--mono); font-size: 13px; background: #0003; padding: 1px 5px; border-radius: 4px; }
+			#hot button { border: 0; background: none; padding: 0; color: var(--heat); text-decoration: underline; cursor: pointer; }
 
-			.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-			.panel > .head {
-			  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-			  padding: 12px 14px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
+			.stage { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
+			@media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+
+			#rail { position: sticky; top: 12px; }
+			#rail h2 { margin: 2px 0 10px; font-size: 14px; font-weight: 600; }
+			#rail ol { list-style: none; margin: 0; padding: 0; }
+			#rail li button {
+			  display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+			  padding: 7px 8px 8px; border-radius: 7px;
 			}
+			#rail li button:hover, #rail li button.on { background: var(--panel); }
+			#rail .fn { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 12.5px; }
+			#rail .fn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			#rail .fn em { font-style: normal; color: var(--heat); font-variant-numeric: tabular-nums; flex: none; }
+			#rail .pk { color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			#rail .meter { height: 4px; margin-top: 5px; background: var(--raise); border-radius: 2px; overflow: hidden; }
+			#rail .meter i { display: block; height: 100%; background: var(--heat); border-radius: 2px; }
+
+			.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+			.panel > .head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; }
 			input[type=search] {
-			  flex: 1 1 240px; min-width: 170px; padding: 8px 12px;
-			  background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
-			  color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s;
+			  flex: 1 1 260px; min-width: 170px; padding: 7px 11px;
+			  background: var(--ink); border: 1px solid var(--line); border-radius: 7px;
 			}
 			input[type=search]::placeholder { color: var(--faint); }
-			input[type=search]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-			button {
-			  padding: 8px 13px; background: var(--bg); border: 1px solid var(--line);
-			  border-radius: 9px; color: var(--text); font: inherit; font-weight: 500; cursor: pointer;
-			  transition: border-color .15s, background .15s;
-			}
-			button:hover { border-color: var(--accent); background: var(--panel-2); }
-			button:active { transform: translateY(1px); }
-			#status { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; margin-left: auto; }
+			input[type=search]:focus { outline: none; border-color: var(--heat); }
+			button { cursor: pointer; }
+			#reset { padding: 7px 12px; background: var(--raise); border: 1px solid var(--line); border-radius: 7px; }
+			#reset:hover { border-color: var(--dim); }
+			#status { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; margin-left: auto; }
 
-			#flame { padding: 10px 8px 12px; overflow-x: auto; }
-			#flame svg { display: block; }
-			#flame rect { cursor: pointer; transition: opacity .1s; }
-			#flame g:hover rect { opacity: .82; }
-			#flame text { pointer-events: none; font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-			#tip {
-			  position: fixed; z-index: 10; max-width: 62ch; padding: 9px 11px;
-			  background: #05070b; border: 1px solid var(--line); border-radius: 10px;
-			  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-			  color: var(--text); pointer-events: none; box-shadow: 0 12px 32px #000a;
-			  overflow-wrap: anywhere; line-height: 1.5;
+			.bar {
+			  display: flex; gap: 8px 18px; align-items: center; flex-wrap: wrap; justify-content: space-between;
+			  padding: 0 12px 10px;
 			}
-			#tip b { color: var(--accent); font-weight: 600; }
+			#crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
+			.crumb {
+			  padding: 2px 7px; border: 0; background: none; color: var(--dim); border-radius: 5px;
+			  font-family: var(--mono); font-size: 12px; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+			}
+			.crumb:hover { color: var(--text); background: var(--raise); }
+			.crumb.on { color: var(--text); }
+			.sep { color: var(--faint); }
+			#legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+			.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px; border: 0; background: none; font-size: 12.5px; color: var(--dim); border-radius: 5px; }
+			.chip:hover { color: var(--text); }
+			.chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+			.chip em { font-style: normal; font-variant-numeric: tabular-nums; }
+			.chip.off { opacity: .45; }
+			.chip.off span { text-decoration: line-through; }
+
+			#flame { padding: 4px 6px 10px; overflow-x: auto; }
+			#flame svg { display: block; }
+			#flame g { cursor: pointer; }
+			#flame g:hover rect.f { stroke: var(--text); stroke-width: 1; }
+			#flame rect.heat { fill: var(--heat); pointer-events: none; }
+			#flame text { pointer-events: none; font: 11.5px var(--mono); fill: #17142c; }
+			#flame text.idle { fill: #b4afd0; }
+			#flame text.dim { fill: #6e6995; }
+			#tip {
+			  position: fixed; z-index: 10; max-width: 64ch; padding: 10px 12px;
+			  background: #120f26f5; border: 1px solid var(--line); border-radius: 9px;
+			  font-size: 12.5px; pointer-events: none; box-shadow: 0 14px 34px #0009; overflow-wrap: anywhere;
+			}
+			#tip .tn { font-family: var(--mono); font-weight: 650; }
+			#tip .tp { color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
+			#tip .tg { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin-top: 8px; }
+			#tip .tg span { color: var(--dim); }
+			#tip .tg b { font-weight: 600; font-variant-numeric: tabular-nums; }
 			[hidden] { display: none !important; }
 
-			.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin: 14px 0 0; }
-			.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; overflow: hidden; }
-			.card h2 {
-			  margin: 0; padding: 12px 14px; font-size: 10.5px; font-weight: 650;
-			  text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
-			  border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
-			}
-			.scroll { overflow-x: auto; }
+			.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 22px 0 0; }
+			.card { min-width: 0; }
+			.card h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+			.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
 			table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
-			th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line-soft); }
-			th { color: var(--faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; }
+			th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+			th { color: var(--dim); font-weight: 500; background: var(--panel); }
 			tbody tr:last-child td { border-bottom: 0; }
-			tbody tr:hover { background: var(--panel-2); }
-			td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; color: var(--text); }
+			tbody tr:hover { background: var(--panel); }
+			td { font-family: var(--mono); overflow-wrap: anywhere; }
 			td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--dim); }
-			.empty { margin: 8px 0; padding: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--dim); }
-			footer { padding: 22px 0 34px; color: var(--faint); font-size: 12px; max-width: 92ch; line-height: 1.6; }
+			.empty { margin: 8px 0; padding: 20px; border: 1px dashed var(--line); border-radius: 10px; color: var(--dim); }
+			footer { padding: 22px 0 0; color: var(--faint); font-size: 13px; max-width: 90ch; line-height: 1.6; }
+			@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 			"""; //$NON-NLS-1$
 
 	private static final String SCRIPT = """
@@ -427,10 +471,80 @@ public final class FlameGraph {
 			  var host = document.getElementById('flame');
 			  var tip = document.getElementById('tip');
 			  var status = document.getElementById('status');
+			  var crumbs = document.getElementById('crumbs');
+			  var legend = document.getElementById('legend');
 			  var find = document.getElementById('find');
 			  var NS = 'http://www.w3.org/2000/svg';
-			  var ROW = 19, focus = root, needle = '';
+			  var ROW = 20, focus = root, needle = '', exact = null, hidden = { idle: unit !== 'bytes' };
+			  var THREAD = 'thread: ';
 
+			  // families by package, so a colour says where the code lives instead of being noise
+			  var FAMILIES = [
+			    { key: 'thread', label: 'Threads', hue: 250, s: 18, l: 58, test: function (n) { return n.indexOf(THREAD) === 0; } },
+			    { key: 'self', label: 'This server', hue: 262, s: 62, l: 66, prefix: ['com.vogella.'] },
+			    { key: 'jdt', label: 'JDT', hue: 28, s: 72, l: 60, prefix: ['org.eclipse.jdt.'] },
+			    { key: 'swt', label: 'SWT', hue: 190, s: 58, l: 52, prefix: ['org.eclipse.swt.'] },
+			    { key: 'ui', label: 'Workbench UI', hue: 205, s: 62, l: 62, prefix: ['org.eclipse.ui.', 'org.eclipse.e4.', 'org.eclipse.jface.'] },
+			    { key: 'platform', label: 'Platform', hue: 150, s: 42, l: 52, prefix: ['org.eclipse.core.', 'org.eclipse.equinox.', 'org.eclipse.osgi.', 'org.osgi.'] },
+			    { key: 'eclipse', label: 'Other Eclipse', hue: 110, s: 34, l: 55, prefix: ['org.eclipse.'] },
+			    { key: 'jdk', label: 'JDK', hue: 40, s: 22, l: 58, prefix: ['java.', 'javax.', 'jdk.', 'sun.', 'com.sun.'] },
+			    { key: 'other', label: 'Libraries', hue: 330, s: 45, l: 64, test: function () { return true; } }
+			  ];
+			  // leaf waits a thread sits in while doing nothing, drawn grey so the work stands out
+			  var IDLE = ['Display.sleep', 'Unsafe.park', 'LockSupport.park', 'Object.wait', 'Thread.sleep',
+			    'Net.accept', 'Net.poll', 'EPoll.wait', 'waitForEvents', 'waitForReferencePendingList',
+			    'ReferenceQueue.remove', 'SocketDispatcher.read', 'KQueue.poll', 'WEPoll.wait'];
+
+			  function family(name) {
+			    for (var i = 0; i < FAMILIES.length; i++) {
+			      var f = FAMILIES[i];
+			      if (f.test ? f.test(name) : f.prefix.some(function (p) { return name.indexOf(p) === 0; })) return f;
+			    }
+			    return FAMILIES[FAMILIES.length - 1];
+			  }
+			  function isIdle(name) {
+			    for (var i = 0; i < IDLE.length; i++) if (name.indexOf(IDLE[i]) >= 0) return true;
+			    return false;
+			  }
+			  // decorate once: parent links, family, idle, self weight
+			  (function prep(n, parent, idle) {
+			    n.p = parent;
+			    n.f = family(n.n);
+			    // an allocation is never idle, whatever the frame it happened in
+			    n.idle = unit !== 'bytes' && (idle || isIdle(n.n));
+			    var below = 0, kids = n.c || [];
+			    for (var i = 0; i < kids.length; i++) { prep(kids[i], n, n.idle); below += kids[i].v; }
+			    n.s = Math.max(n.v - below, 0);
+			  })(root, null, false);
+
+			  // pkg.Outer$Inner.method:12 -> Outer$Inner.method:12, which is the part that tells frames apart
+			  function short(name) {
+			    if (name.indexOf(THREAD) === 0) return name.slice(THREAD.length);
+			    var colon = name.lastIndexOf(':'), tail = '', body = name;
+			    if (colon > 0 && /^\\d+$/.test(name.slice(colon + 1))) { tail = name.slice(colon); body = name.slice(0, colon); }
+			    var dot = body.lastIndexOf('.');
+			    if (dot < 0) return name;
+			    var cls = body.slice(0, dot), method = body.slice(dot + 1);
+			    return cls.slice(cls.lastIndexOf('.') + 1) + '.' + method + tail;
+			  }
+			  function pkg(name) {
+			    if (name.indexOf(THREAD) === 0) return '';
+			    var body = name.replace(/:\\d+$/, ''), dot = body.lastIndexOf('.');
+			    var cls = dot < 0 ? '' : body.slice(0, dot);
+			    return cls.slice(0, Math.max(cls.lastIndexOf('.'), 0));
+			  }
+			  function hash(s) {
+			    var h = 0;
+			    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+			    return Math.abs(h);
+			  }
+			  function fill(n) {
+			    if (n === root) return 'hsl(248 22% 36%)';
+			    if (n.idle) return 'hsl(248 14% ' + (30 + hash(n.n) % 6) + '%)';
+			    var f = n.f, h = hash(n.n);
+			    // a little lightness and hue jitter per class, so neighbours of one family stay apart
+			    return 'hsl(' + (f.hue + (h % 11) - 5) + ' ' + f.s + '% ' + (f.l + (h % 9) - 4) + '%)';
+			  }
 			  function fmt(v) {
 			    if (unit === 'bytes') {
 			      if (v < 1024) return v + ' B';
@@ -438,107 +552,290 @@ public final class FlameGraph {
 			      if (v < 1073741824) return (v / 1048576).toFixed(1) + ' MB';
 			      return (v / 1073741824).toFixed(2) + ' GB';
 			    }
-			    return v.toLocaleString() + (unit ? ' ' + unit : '');
+			    return v.toLocaleString('en') + (unit ? ' ' + unit : '');
 			  }
-			  // only the levels that will actually be drawn: one narrow branch thirty
-			  // frames deep would otherwise size the canvas and leave the rest empty
-			  function depth(n, span) {
-			    if (span < 0.4) return 0;
+			  function pct(v, of) { return of ? (v * 100 / of).toFixed(v * 1000 < of ? 2 : 1) + '%' : '0%'; }
+			  function base() { return root.w || root.v; }
+			  function visible(n) { return !(n.idle && hidden.idle) && !hidden[n.f.key]; }
+			  function weight(n) {
+			    if (!visible(n) && n.f.key !== 'thread' && n !== root) return 0;
+			    if (!n.c) return n.v;
+			    var w = n.s;
+			    for (var i = 0; i < n.c.length; i++) w += weight(n.c[i]);
+			    return w;
+			  }
+
+			  function depth(n, span, total) {
+			    if (span < 0.5) return 0;
 			    var d = 1, kids = n.c || [];
 			    for (var i = 0; i < kids.length; i++) {
-			      d = Math.max(d, 1 + depth(kids[i], span * kids[i].v / n.v));
+			      var w = kids[i].w;
+			      if (w > 0) d = Math.max(d, 1 + depth(kids[i], span * w / total, w));
 			    }
 			    return d;
 			  }
-			  // stable per frame, so one method keeps its colour wherever it appears, and
-			  // spread across the wheel rather than the classic orange, which at this
-			  // density reads as one block
-			  function colour(name) {
-			    var h = 0;
-			    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
-			    h = Math.abs(h);
-			    var hue = (h * 47) % 360;
-			    return 'hsl(' + hue + ' 46% 58%)';
+			  function measure(n) {
+			    n.w = weight(n);
+			    (n.c || []).forEach(measure);
 			  }
 
 			  function draw() {
-			    var width = Math.max(host.clientWidth || 900, 320);
-			    var levels = Math.max(depth(focus, width), 1);
-			    var height = levels * ROW + 4;
+			    measure(root);
+			    var width = Math.max(host.clientWidth - 16 || 900, 320);
+			    var total = focus.w || 1;
+			    var levels = Math.max(depth(focus, width, total), 1);
+			    var height = levels * ROW + 2;
 			    var svg = document.createElementNS(NS, 'svg');
 			    svg.setAttribute('width', width);
 			    svg.setAttribute('height', height);
 			    svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
-
 			    var matches = 0, matched = 0;
+
 			    (function place(node, x, level, span) {
-			      var w = span;
-			      if (w < 0.4) return;
-			      var hit = needle && node.n.toLowerCase().indexOf(needle) >= 0;
-			      if (hit) { matches++; matched += node.v; }
+			      if (span < 0.5) return;
+			      var hit = exact ? node.n === exact : needle && node.n.toLowerCase().indexOf(needle) >= 0;
+			      if (hit) { matches++; matched += node.w; }
 			      var g = document.createElementNS(NS, 'g');
 			      var r = document.createElementNS(NS, 'rect');
 			      r.setAttribute('x', x.toFixed(2));
-			      r.setAttribute('y', height - (level + 1) * ROW);
-			      r.setAttribute('width', Math.max(w - 0.5, 0.5).toFixed(2));
-			      r.setAttribute('height', ROW - 1);
-			      r.setAttribute('rx', 3);
-			      r.setAttribute('fill', needle ? (hit ? '#7ee787' : '#2a2f3b') : colour(node.n));
+			      r.setAttribute('y', level * ROW);
+			      r.setAttribute('width', Math.max(span - 1, 0.5).toFixed(2));
+			      r.setAttribute('height', ROW - 2);
+			      r.setAttribute('rx', 2.5);
+			      var marking = needle || exact;
+			      r.setAttribute('class', 'f');
+			      r.setAttribute('fill', marking ? (hit ? '#ffb347' : 'hsl(248 18% 24%)') : fill(node));
 			      g.appendChild(r);
-			      if (w > 42) {
+			      // the heat stripe: how much of this frame's width is spent in the frame itself
+			      var own = node.idle || node === root || node.f.key === 'thread' ? 0 : span * node.s / node.w;
+			      if (!marking && own >= 1) {
+			        var h = document.createElementNS(NS, 'rect');
+			        h.setAttribute('class', 'heat');
+			        h.setAttribute('x', x.toFixed(2));
+			        h.setAttribute('y', level * ROW + ROW - 5);
+			        h.setAttribute('width', Math.max(Math.min(own, span - 1), 1).toFixed(2));
+			        h.setAttribute('height', 3);
+			        g.appendChild(h);
+			      }
+			      if (span > 34) {
 			        var t = document.createElementNS(NS, 'text');
-			        t.setAttribute('x', (x + 4).toFixed(2));
-			        t.setAttribute('y', height - level * ROW - 6);
-			        t.setAttribute('fill', needle && !hit ? '#6b7385' : '#0a0c11');
-			        var label = node.n, max = Math.floor((w - 8) / 6.1);
+			        t.setAttribute('x', (x + 5).toFixed(2));
+			        t.setAttribute('y', level * ROW + ROW - 8);
+			        t.setAttribute('class', marking && !hit ? 'dim' : node.idle && !hit ? 'idle' : '');
+			        var label = node === root ? (unit === 'bytes' ? 'all allocations' : 'all threads') : short(node.n);
+			        var max = Math.floor((span - 10) / 6.6);
 			        t.textContent = label.length > max ? label.slice(0, Math.max(max - 1, 1)) + '\\u2026' : label;
 			        g.appendChild(t);
 			      }
-			      g.addEventListener('mousemove', function (e) {
-			        tip.hidden = false;
-			        tip.innerHTML = '';
-			        tip.append(node.n);
-			        var b = document.createElement('b');
-			        b.textContent = fmt(node.v) + ' \\u00b7 ' + (node.v * 100 / root.v).toFixed(1) + '% of all';
-			        tip.append(document.createElement('br'), b);
-			        var pad = 14;
-			        var left = Math.min(e.clientX + pad, window.innerWidth - tip.offsetWidth - 8);
-			        var top = e.clientY + pad + tip.offsetHeight > window.innerHeight
-			          ? e.clientY - tip.offsetHeight - pad : e.clientY + pad;
-			        tip.style.left = Math.max(8, left) + 'px';
-			        tip.style.top = top + 'px';
-			      });
+			      g.addEventListener('mousemove', function (e) { showTip(node, e); });
 			      g.addEventListener('mouseleave', function () { tip.hidden = true; });
-			      g.addEventListener('click', function () { focus = node; tip.hidden = true; draw(); });
+			      g.addEventListener('click', function () { zoom(node); });
 			      svg.appendChild(g);
-
 			      var kids = node.c || [], at = x;
 			      for (var i = 0; i < kids.length; i++) {
-			        place(kids[i], at, level + 1, span * kids[i].v / node.v);
-			        at += span * kids[i].v / node.v;
+			        if (kids[i].w <= 0) continue;
+			        var w = span * kids[i].w / node.w;
+			        place(kids[i], at, level + 1, w);
+			        at += w;
 			      }
 			    })(focus, 0, 0, width);
 
 			    host.replaceChildren(svg);
-			    var scope = focus === root ? 'all ' + fmt(root.v)
-			      : focus.n + ' \\u2014 ' + fmt(focus.v) + ' (' + (focus.v * 100 / root.v).toFixed(1) + '%), click Reset to zoom out';
-			    status.textContent = needle
-			      ? matches + ' frame' + (matches === 1 ? '' : 's') + ' matched, ' + fmt(matched) + ' \\u00b7 ' + scope
-			      : scope;
+			    renderCrumbs();
+			    status.textContent = needle || exact
+			      ? matches + ' frame' + (matches === 1 ? '' : 's') + ' matched, ' + fmt(matched) + ' (' + pct(matched, base()) + ')'
+			      : fmt(focus.w) + (focus === root ? '' : ', ' + pct(focus.w, base()) + ' of what is shown');
 			  }
 
-			  document.getElementById('reset').addEventListener('click', function () { focus = root; draw(); });
+			  function showTip(node, e) {
+			    tip.hidden = false;
+			    tip.replaceChildren();
+			    var head = document.createElement('div');
+			    head.className = 'tn';
+			    head.textContent = node === root ? 'all' : short(node.n);
+			    tip.append(head);
+			    var where = pkg(node.n);
+			    if (where) {
+			      var p = document.createElement('div');
+			      p.className = 'tp';
+			      p.textContent = where;
+			      tip.append(p);
+			    }
+			    var rows = [['Total', fmt(node.v) + ', ' + pct(node.v, base())],
+			      ['Self', fmt(node.s) + ', ' + pct(node.s, base())]];
+			    if (node.p) rows.push(['Of parent', pct(node.v, node.p.v)]);
+			    rows.push(['Kind', node.idle ? 'idle or waiting' : node.f.label]);
+			    var grid = document.createElement('div');
+			    grid.className = 'tg';
+			    rows.forEach(function (row) {
+			      var k = document.createElement('span'), v = document.createElement('b');
+			      k.textContent = row[0];
+			      v.textContent = row[1];
+			      grid.append(k, v);
+			    });
+			    tip.append(grid);
+			    var pad = 14;
+			    var left = Math.min(e.clientX + pad, window.innerWidth - tip.offsetWidth - 8);
+			    var top = e.clientY + pad + tip.offsetHeight > window.innerHeight ? e.clientY - tip.offsetHeight - pad : e.clientY + pad;
+			    tip.style.left = Math.max(8, left) + 'px';
+			    tip.style.top = Math.max(8, top) + 'px';
+			  }
+
+			  function zoom(node) { focus = node; tip.hidden = true; draw(); }
+			  function renderCrumbs() {
+			    var chain = [];
+			    for (var n = focus; n; n = n.p) chain.unshift(n);
+			    crumbs.replaceChildren();
+			    chain.forEach(function (n, i) {
+			      if (i > 0) {
+			        var sep = document.createElement('span');
+			        sep.className = 'sep';
+			        sep.textContent = '\\u203a';
+			        crumbs.append(sep);
+			      }
+			      var b = document.createElement('button');
+			      b.type = 'button';
+			      b.className = 'crumb' + (n === focus ? ' on' : '');
+			      b.textContent = n === root ? 'all' : short(n.n);
+			      b.title = n.n;
+			      b.addEventListener('click', function () { zoom(n); });
+			      crumbs.append(b);
+			    });
+			  }
+
+			  // share of the self weight per family, which is where the cost actually sits
+			  (function renderLegend() {
+			    var sums = {}, idle = 0;
+			    (function walk(n) {
+			      if (n !== root) {
+			        if (n.idle) idle += n.s; else sums[n.f.key] = (sums[n.f.key] || 0) + n.s;
+			      }
+			      (n.c || []).forEach(walk);
+			    })(root);
+			    // a family under a thousandth of the weight is a legend entry nobody can see in the graph
+			    var entries = FAMILIES.filter(function (f) { return f.key !== 'thread' && sums[f.key] * 1000 >= root.v; })
+			      .sort(function (a, b) { return sums[b.key] - sums[a.key]; })
+			      .map(function (f) { return { key: f.key, label: f.label, colour: 'hsl(' + f.hue + ' ' + f.s + '% ' + f.l + '%)', v: sums[f.key] }; });
+			    if (idle * 1000 >= root.v) entries.push({ key: 'idle', label: 'Idle or waiting', colour: 'hsl(220 8% 27%)', v: idle });
+			    entries.forEach(function (e) {
+			      var b = document.createElement('button');
+			      b.type = 'button';
+			      b.className = 'chip';
+			      b.title = 'Click to hide or show';
+			      var dot = document.createElement('i');
+			      dot.style.background = e.colour;
+			      var label = document.createElement('span');
+			      label.textContent = e.label;
+			      var share = document.createElement('em');
+			      share.textContent = pct(e.v, root.v);
+			      b.append(dot, label, share);
+			      b.classList.toggle('off', !!hidden[e.key]);
+			      b.setAttribute('aria-pressed', String(!hidden[e.key]));
+			      b.addEventListener('click', function () {
+			        hidden[e.key] = !hidden[e.key];
+			        b.classList.toggle('off', !!hidden[e.key]);
+			        b.setAttribute('aria-pressed', String(!hidden[e.key]));
+			        draw();
+			        summarise();
+			      });
+			      legend.append(b);
+			    });
+			  })();
+
+			  var hot = document.getElementById('hot');
+			  var hottest = document.getElementById('hottest');
+			  document.getElementById('railTitle').textContent = unit === 'bytes' ? 'Where the bytes are allocated' : 'Where the time sits';
+
+			  // the answer first: follow the heaviest branch until a frame keeps more than it passes on
+			  function summarise() {
+			    measure(root);
+			    var total = base(), n = root, path = [];
+			    while (n.c) {
+			      var best = null;
+			      for (var i = 0; i < n.c.length; i++) if (n.c[i].w > 0 && (!best || n.c[i].w > best.w)) best = n.c[i];
+			      if (!best || best.w < n.s || best.w * 4 < total) break;
+			      n = best;
+			      path.push(n);
+			    }
+			    hot.replaceChildren();
+			    if (path.length && total) {
+			      var thread = path[0].f.key === 'thread' ? short(path[0].n) : null;
+			      var end = path[path.length - 1];
+			      var lead = document.createElement('b');
+			      lead.textContent = pct(end.w, total);
+			      var where = document.createElement('code');
+			      where.textContent = short(end.n);
+			      var go = document.createElement('button');
+			      go.type = 'button';
+			      go.textContent = 'Zoom to it';
+			      go.addEventListener('click', function () { zoom(end); });
+			      hot.append(lead, (unit === 'bytes' ? ' of the bytes are allocated below ' : ' of the ' + (hidden.idle ? 'busy ' : '') + 'samples run below '), where);
+			      if (thread && end !== path[0]) {
+			        var t = document.createElement('code');
+			        t.textContent = thread;
+			        hot.append(' on ', t);
+			      }
+			      hot.append('. ', go);
+			    }
+
+			    var self = {};
+			    (function walk(node) {
+			      if (node !== root && !node.idle && node.f.key !== 'thread' && visible(node) && node.s > 0) self[node.n] = (self[node.n] || 0) + node.s;
+			      (node.c || []).forEach(walk);
+			    })(root);
+			    var ranked = Object.keys(self).sort(function (a, b) { return self[b] - self[a]; }).slice(0, 12);
+			    var top = ranked.length ? self[ranked[0]] : 1;
+			    hottest.replaceChildren();
+			    ranked.forEach(function (name) {
+			      var li = document.createElement('li'), b = document.createElement('button');
+			      b.type = 'button';
+			      b.title = name;
+			      var fn = document.createElement('div');
+			      fn.className = 'fn';
+			      var label = document.createElement('span');
+			      label.textContent = short(name);
+			      var share = document.createElement('em');
+			      share.textContent = pct(self[name], total);
+			      fn.append(label, share);
+			      var pk = document.createElement('div');
+			      pk.className = 'pk';
+			      pk.textContent = pkg(name);
+			      var meter = document.createElement('div');
+			      meter.className = 'meter';
+			      var fillBar = document.createElement('i');
+			      fillBar.style.width = (self[name] * 100 / top).toFixed(1) + '%';
+			      meter.append(fillBar);
+			      b.append(fn, pk, meter);
+			      b.addEventListener('click', function () {
+			        var on = exact !== name;
+			        exact = on ? name : null;
+			        hottest.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
+			        b.classList.toggle('on', on);
+			        draw();
+			      });
+			      li.append(b);
+			      hottest.append(li);
+			    });
+			  }
+
+			  document.getElementById('reset').addEventListener('click', function () { zoom(root); });
+			  document.addEventListener('keydown', function (e) {
+			    if (e.key === 'Escape') {
+			      if (exact) { exact = null; hottest.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); }); draw(); }
+			      else if (find.value) { find.value = ''; needle = ''; draw(); }
+			      else zoom(root);
+			    }
+			    if (e.key === '/' && document.activeElement !== find) { e.preventDefault(); find.focus(); }
+			  });
 			  var pending;
 			  find.addEventListener('input', function () {
 			    clearTimeout(pending);
-			    pending = setTimeout(function () { needle = find.value.trim().toLowerCase(); draw(); }, 90);
+			    pending = setTimeout(function () { needle = find.value.trim().toLowerCase(); exact = null; draw(); }, 90);
 			  });
 			  var resizing;
-			  window.addEventListener('resize', function () {
-			    clearTimeout(resizing);
-			    resizing = setTimeout(draw, 120);
-			  });
+			  window.addEventListener('resize', function () { clearTimeout(resizing); resizing = setTimeout(draw, 120); });
 			  draw();
+			  summarise();
 			})();
 			"""; //$NON-NLS-1$
 }

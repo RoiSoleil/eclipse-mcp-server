@@ -33,7 +33,8 @@ public final class ShowTraceTool implements IMcpTool {
 				  "properties": {
 				    "sessionId":          {"type":"string","description":"Session from eclipse_start_sampling. Omit for the most recent."},
 				    "frameFilter":        {"type":"string","description":"Draw only the stacks containing this text in a frame, e.g. a package prefix. Applied when reading, so one session can be drawn from several angles."},
-				    "includeIdleThreads": {"type":"boolean","default":false,"description":"Include threads parked or waiting. Off by default, because the pooled threads of an idle IDE otherwise dominate the picture. Turn it ON to look at a FREEZE, whose threads are usually parked."},
+				    "includeIdleThreads": {"type":"boolean","default":false,"description":"Include threads parked or waiting, including an event loop sleeping in Display.sleep and accept or poll loops. Off by default, because the pooled threads of an idle IDE otherwise dominate the picture. Turn it ON to look at a FREEZE, whose threads are usually parked."},
+				    "includeMcpFrames":   {"type":"boolean","default":false,"description":"Keep what this MCP server itself contributed. Off by default: stacks on the server's own threads, stacks whose running code is the server's, and stacks carrying its request machinery are left out and counted in serverSamplesExcluded, and the server frames that only dispatched the application's work, such as a tool running a menu entry on the UI thread, are removed from otherwise kept stacks and counted in serverFramesElidedFrom. Turn it ON to profile the server itself."},
 				    "open":               {"type":"boolean","default":false,"description":"Open the page in the machine's browser. VISIBLE TO WHOEVER IS AT THE IDE, since a browser window appears."}
 				  },
 				  "additionalProperties": false
@@ -61,7 +62,8 @@ public final class ShowTraceTool implements IMcpTool {
 		JsonObject answer = new JsonObject().put("sessionId", session.id()) //$NON-NLS-1$
 				.put("running", Boolean.valueOf(session.running())) //$NON-NLS-1$
 				.put("samples", Integer.valueOf(session.ticks())); //$NON-NLS-1$
-		TracePage.publishSampling(session, includeIdle, frameFilter, answer, args.getBoolean("open", false)); //$NON-NLS-1$
+		TracePage.publishSampling(session, includeIdle, frameFilter, args.getBoolean("includeMcpFrames", false), //$NON-NLS-1$
+				answer, args.getBoolean("open", false)); //$NON-NLS-1$
 		return McpToolResult.of(answer.toString());
 	}
 }
