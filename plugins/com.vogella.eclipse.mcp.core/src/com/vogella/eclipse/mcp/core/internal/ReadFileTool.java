@@ -90,7 +90,7 @@ public final class ReadFileTool implements IMcpTool {
 		if (isBinary(bytes)) {
 			return McpToolResult.of(result.put("read", Boolean.FALSE) //$NON-NLS-1$
 					.put("binary", Boolean.TRUE) //$NON-NLS-1$
-					.put("reason", "The file contains NUL bytes, so it is binary and is not returned as text.") //$NON-NLS-1$ //$NON-NLS-2$
+					.put("reason", "The file contains NUL bytes, so it is binary and is not returned as text. For a PNG, JPEG, GIF or WebP use eclipse_read_image.") //$NON-NLS-1$ //$NON-NLS-2$
 					.toString());
 		}
 

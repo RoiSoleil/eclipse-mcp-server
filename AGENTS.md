@@ -94,6 +94,10 @@ Any new core tool that writes something UI listeners react to goes through it as
 **Every list-returning tool honours `maxResults` and reports `total` and `truncated`.**
 A new tool that returns a list without those fields is incomplete.
 
+**A tool that returns a picture attaches it with `McpToolResult.withImage`.**
+The server bundle sends it as MCP image content after the text, which the model sees as an image; a base64 string inside the JSON is only text to it.
+`eclipse_run_script` passes the images of its steps on, so a step's picture is not lost inside a batch.
+
 **Anything derived from files must refresh first.**
 A client edits through its own shell, so the workspace does not know about those edits until `WorkspaceSync.refresh` runs.
 `eclipse_get_problems` does it by default and reports `upToDate`; the two editing tools refresh the file they touch.

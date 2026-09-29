@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -223,7 +224,8 @@ public final class ScreenshotTools {
 					    "activate":   {"type":"boolean","default":false,"description":"Bring the part to the front first. This visibly rearranges the user's IDE, so it is off by default."},
 					    "maxWidth":   {"type":"integer","default":1200,"minimum":100,"maximum":4000,"description":"Downscale to this width. A full HD PNG is over a megabyte once base64 encoded."},
 					    "outputPath": {"type":"string","description":"Absolute file to write. Defaults to a temporary file."},
-					    "includeBase64": {"type":"boolean","default":false,"description":"Also return the image inline. Large; prefer reading the file."},
+					    "inline":     {"type":"boolean","default":false,"description":"Also return the PNG as image content, so you see the picture itself without reading the file. Keep maxWidth moderate, since a client caps how large an image it accepts."},
+					    "includeBase64": {"type":"boolean","default":false,"description":"Also put the PNG into the JSON answer as a base64 string, for a client that processes the bytes itself. To look at the image, use inline instead: a base64 string is text to the model, not a picture."},
 				    "highlights": {"type":"array","description":"Rectangles to draw onto the image after the capture, each {path?, bounds?, color?, label?, style?, padding?, lineWidth?, labelPosition?}: path is a widget path from eclipse_get_widget_tree relative to the capture target, bounds is 'x,y wxh' in points relative to the capture target, color is #rrggbb (default #ff0066, which reads on light and dark themes), label is drawn in a filled box beside the rectangle, style is outline (default) or fill (translucent). padding adds air around the rectangle IN POINTS, one number for every side or 'top,right,bottom,left', applied after the rectangle is resolved and before it is scaled, which is the only way to frame a widget loosely when the rectangle came from a path. lineWidth is the outline in pixels, 3 by default. labelPosition is above (default), below, left, right or inside, for keeping a label off a neighbouring element. The answer reports the padded rectangle under pointsInTarget and the pixels actually drawn under pixels.","items":{"type":"object","properties":{"path":{"type":"string"},"bounds":{"type":"string"},"color":{"type":"string"},"label":{"type":"string"},"style":{"type":"string","enum":["outline","fill"]},"padding":{"type":["integer","string"]},"lineWidth":{"type":"integer","minimum":1,"maximum":40},"labelPosition":{"type":"string","enum":["above","below","left","right","inside"]}},"additionalProperties":false}},
 				    "settle": {"type":"boolean","default":false,"description":"Wait for the UI to look idle before capturing, the same heuristic eclipse_wait_until_settled runs, and report it under 'settle'. IT IS A HEURISTIC: it drains the display queue and waits for the job manager, and it cannot see work on a plain background thread, so JDT's semantic highlighting can still land after the capture. Assert what you need rather than trusting it."},
 				    "settleTimeoutSeconds": {"type":"integer","default":10,"minimum":1,"maximum":120,"description":"Budget for 'settle'. Running out still captures, and the report says it did not settle."},
@@ -258,6 +260,7 @@ public final class ScreenshotTools {
 			int maxWidth = args.getInt("maxWidth", 1200, 100, 4000); //$NON-NLS-1$
 			String outputPath = args.getString("outputPath"); //$NON-NLS-1$
 			boolean includeBase64 = args.getBoolean("includeBase64", false); //$NON-NLS-1$
+			boolean inline = args.getBoolean("inline", false); //$NON-NLS-1$
 
 			Object highlights = arguments.get("highlights"); //$NON-NLS-1$
 			// Whether this call is already ON the UI thread, which has to be asked here
@@ -289,12 +292,16 @@ public final class ScreenshotTools {
 			Supplier<Encoding> once = () -> capture(target, part, shellTitle, activate, maxWidth, target0,
 					includeBase64, args.getBoolean("includeToolbar", false), highlights, sameTurn, suppressCaret); //$NON-NLS-1$
 			if (!settlePixels) {
-				return onUi(once, encoding -> {
+				AtomicReference<byte[]> png = new AtomicReference<>();
+				McpToolResult result = onUi(once, encoding -> {
 					JsonObject answer = encoding.finish();
+					png.set(encoding.png().get());
 					return (settled == null ? answer : answer.put("settle", settled)).toString(); //$NON-NLS-1$
 				});
+				return withPng(result, inline, png.get());
 			}
 			JsonObject answer = null;
+			byte[] lastPng = null;
 			byte[] previous = null;
 			int taken = 0;
 			boolean converged = false;
@@ -307,6 +314,7 @@ public final class ScreenshotTools {
 					return McpToolResult.error("The Eclipse UI is busy, try again."); //$NON-NLS-1$
 				}
 				answer = encoding.finish();
+				lastPng = encoding.png().get();
 				taken++;
 				byte[] bytes = bytesOf(target0);
 				if (bytes != null && previous != null && java.util.Arrays.equals(bytes, previous)) {
@@ -325,7 +333,12 @@ public final class ScreenshotTools {
 								.formatted(Integer.valueOf(attempts)));
 			}
 			answer.put("pixelSettle", pixelSettle); //$NON-NLS-1$
-			return McpToolResult.of((settled == null ? answer : answer.put("settle", settled)).toString()); //$NON-NLS-1$
+			return withPng(McpToolResult.of((settled == null ? answer : answer.put("settle", settled)).toString()), //$NON-NLS-1$
+					inline, lastPng);
+		}
+
+		private static McpToolResult withPng(McpToolResult result, boolean inline, byte[] png) {
+			return inline && png != null && !result.isError() ? result.withImage(png, "image/png") : result; //$NON-NLS-1$
 		}
 
 		/** Leaves the UI alone between two captures of a pixel settle. */
@@ -865,7 +878,12 @@ public final class ScreenshotTools {
 		 * caller's thread instead.
 		 */
 		record Encoding(JsonObject answer, ImageData pixels, int width, int height, String outputPath,
-				boolean includeBase64) {
+				boolean includeBase64, AtomicReference<byte[]> png) {
+
+			Encoding(JsonObject answer, ImageData pixels, int width, int height, String outputPath,
+					boolean includeBase64) {
+				this(answer, pixels, width, height, outputPath, includeBase64, new AtomicReference<>());
+			}
 
 			static Encoding done(JsonObject answer) {
 				return new Encoding(answer, null, 0, 0, null, false);
@@ -884,6 +902,7 @@ public final class ScreenshotTools {
 					Path file = outputPath != null ? Path.of(outputPath)
 							: Files.createTempFile("eclipse-screenshot-", ".png"); //$NON-NLS-1$ //$NON-NLS-2$
 					Files.write(file, bytes.toByteArray());
+					png.set(bytes.toByteArray());
 					answer.put("path", file.toAbsolutePath().toString()) //$NON-NLS-1$
 							.put("bytes", bytes.size()); //$NON-NLS-1$
 					if (includeBase64) {

@@ -1,5 +1,6 @@
 package com.vogella.eclipse.mcp.server.tests;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -13,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,6 +22,7 @@ import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
@@ -49,6 +52,7 @@ import io.modelcontextprotocol.json.schema.JsonSchemaValidator;
 import io.modelcontextprotocol.json.schema.jackson3.JacksonJsonSchemaValidatorSupplier;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.ImageContent;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 
@@ -66,6 +70,12 @@ class McpServerServiceTest {
 
 	private static final Set<String> WRITES_FILES = Set.of("eclipse_organize_imports", "eclipse_format",
 			"eclipse_write_file");
+
+	private static final String IMAGE = "/%s/pixel.png".formatted(PROJECT);
+
+	/** A 1x1 PNG. */
+	private static final byte[] PIXEL = Base64.getDecoder().decode(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
 	/** A target whose only location is an empty directory, so resolving it needs no network. */
 	private static final String TARGET = "/%s/smoke.target".formatted(PROJECT);
@@ -138,6 +148,11 @@ class McpServerServiceTest {
 				</target>
 				""".formatted(empty.toAbsolutePath()).getBytes(StandardCharsets.UTF_8),
 				org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
+		// a second write, so the local history tools have a version to work with
+		IFile target = project.getFile("smoke.target");
+		target.setContents(target.readAllBytes(), org.eclipse.core.resources.IResource.KEEP_HISTORY,
+				new NullProgressMonitor());
+		project.getFile("pixel.png").create(PIXEL, org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
 		project.build(IncrementalProjectBuilder.FULL_BUILD, new NullProgressMonitor());
 	}
 
@@ -217,6 +232,21 @@ class McpServerServiceTest {
 				assertNotEquals(Boolean.TRUE, result.isError(),
 						tool.name() + " failed: " + ((TextContent) result.content().get(0)).text());
 			}
+		}
+	}
+
+	@Test
+	void returnsAnImageAsImageContent() throws Exception {
+		try (McpSyncClient client = connect()) {
+			client.initialize();
+			CallToolResult result = client.callTool(new CallToolRequest("eclipse_read_image", Map.of("path", IMAGE)));
+
+			assertNotEquals(Boolean.TRUE, result.isError());
+			assertEquals(2, result.content().size(), result.content().toString());
+			assertTrue(((TextContent) result.content().get(0)).text().contains("\"width\": 1"));
+			ImageContent image = (ImageContent) result.content().get(1);
+			assertEquals("image/png", image.mimeType());
+			assertArrayEquals(PIXEL, Base64.getDecoder().decode(image.data()));
 		}
 	}
 
@@ -322,7 +352,10 @@ class McpServerServiceTest {
 		// a dry run against a name that matches nothing, so the smoke test changes nothing
 		case "eclipse_set_project_state" -> Map.of("state", "open", "namePattern", "no-such-project-*");
 		case "eclipse_organize_imports", "eclipse_format" -> Map.of("path", SAMPLE);
-		case "eclipse_read_file" -> Map.of("path", SAMPLE);
+		case "eclipse_read_file", "eclipse_get_local_history" -> Map.of("path", SAMPLE);
+		// a dry run, so the smoke test restores nothing
+		case "eclipse_restore_local_history" -> Map.of("path", TARGET, "dryRun", Boolean.TRUE);
+		case "eclipse_read_image" -> Map.of("path", IMAGE);
 		case "eclipse_resolve_path" -> Map.of("of", List.of(PROJECT));
 		// a name nothing matches, so the smoke test removes nothing even by accident
 		case "eclipse_remove_project" -> Map.of("namePattern", "no-such-project-*");

@@ -100,11 +100,11 @@ public final class RunScriptTool implements IMcpTool {
 		boolean stopOnFailure = args.getBoolean("stopOnFailure", true); //$NON-NLS-1$
 		RUNNING.set(Boolean.TRUE);
 		try {
-			if (!atomic) {
-				return McpToolResult.of(run(steps, stopOnFailure, false, monitor).toString());
-			}
-			return McpToolResult.of(UiDispatch.call(() -> run(steps, stopOnFailure, true, monitor),
-					CallBudget.maxWaitSeconds()).toString());
+			List<McpToolResult.Image> images = new ArrayList<>();
+			JsonObject report = atomic
+					? UiDispatch.call(() -> run(steps, stopOnFailure, true, images, monitor), CallBudget.maxWaitSeconds())
+					: run(steps, stopOnFailure, false, images, monitor);
+			return new McpToolResult(report.toString(), false, images);
 		} catch (Exception e) {
 			return McpToolResult.error("The script could not be run: " + e); //$NON-NLS-1$
 		} finally {
@@ -121,7 +121,8 @@ public final class RunScriptTool implements IMcpTool {
 			boolean continueOnError) {
 	}
 
-	private static JsonObject run(List<Step> steps, boolean stopOnFailure, boolean atomic, IProgressMonitor monitor) {
+	private static JsonObject run(List<Step> steps, boolean stopOnFailure, boolean atomic,
+			List<McpToolResult.Image> images, IProgressMonitor monitor) {
 		JsonArray results = new JsonArray();
 		int passed = 0;
 		int failed = 0;
@@ -154,6 +155,11 @@ public final class RunScriptTool implements IMcpTool {
 				McpToolResult result = step.tool().call(step.arguments(), monitor);
 				text = result.text();
 				error = result.isError();
+				if (!result.images().isEmpty()) {
+					// the step's answer only counts them; the images follow the script's own text
+					images.addAll(result.images());
+					entry.put("images", Integer.valueOf(result.images().size())); //$NON-NLS-1$
+				}
 			} catch (Exception e) {
 				text = String.valueOf(e);
 				error = true;

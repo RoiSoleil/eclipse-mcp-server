@@ -24,6 +24,7 @@
       <tool class="com.vogella.eclipse.mcp.core.internal.SubstituteBundleTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.GetProjectDependenciesTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.ReadFileTool"/>
+      <tool class="com.vogella.eclipse.mcp.core.internal.ReadImageTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.WriteFileTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.EditFileTool"/>
       <tool class="com.vogella.eclipse.mcp.core.internal.LocalHistoryTools$Get"/>

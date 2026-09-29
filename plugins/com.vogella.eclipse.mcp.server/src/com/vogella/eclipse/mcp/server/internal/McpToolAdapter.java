@@ -1,6 +1,7 @@
 package com.vogella.eclipse.mcp.server.internal;
 
 import java.time.Duration;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -19,6 +20,7 @@ import com.vogella.eclipse.mcp.server.McpPreferences;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.ImageContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 
 /**
@@ -48,7 +50,13 @@ public final class McpToolAdapter {
 				.submit(() -> tool.call(arguments == null ? Map.of() : arguments, monitor));
 		try {
 			McpToolResult result = pending.get(timeout.toSeconds(), TimeUnit.SECONDS);
-			return CallToolResult.builder().addTextContent(result.text()).isError(result.isError()).build();
+			CallToolResult.Builder answer = CallToolResult.builder().addTextContent(result.text())
+					.isError(Boolean.valueOf(result.isError()));
+			for (McpToolResult.Image image : result.images()) {
+				answer.addContent(
+						new ImageContent(null, Base64.getEncoder().encodeToString(image.data()), image.mimeType()));
+			}
+			return answer.build();
 		} catch (TimeoutException e) {
 			// the monitor is what actually stops a cooperative tool; cancel(true) only
 			// interrupts, and a tool blocked on the workspace lock or in native code
