@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.Attributes;
@@ -232,6 +233,36 @@ class McpServerServiceTest {
 				assertNotEquals(Boolean.TRUE, result.isError(),
 						tool.name() + " failed: " + ((TextContent) result.content().get(0)).text());
 			}
+		}
+	}
+
+	@Test
+	void answersAnUnknownSessionWithAJsonRpcErrorRatherThanAJavaException() throws Exception {
+		HttpResponse<String> response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(endpoint().url()))
+				.header("Authorization", "Bearer " + endpoint().token()).header("Content-Type", "application/json")
+				.header("Accept", "application/json, text/event-stream").header("Mcp-Session-Id", "no-such-session")
+				.POST(HttpRequest.BodyPublishers.ofString("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"))
+				.build(), HttpResponse.BodyHandlers.ofString());
+
+		assertEquals(404, response.statusCode());
+		assertFalse(response.body().contains("stackTrace"), response.body());
+		assertTrue(response.body().contains("\"jsonrpc\""), response.body());
+		assertTrue(response.body().contains("initialize a new one"), response.body());
+	}
+
+	@Test
+	void reportsSchemaViolationsInEnglishWhateverTheLocale() throws Exception {
+		Locale previous = Locale.getDefault();
+		Locale.setDefault(Locale.GERMAN);
+		try (McpSyncClient client = connect()) {
+			client.initialize();
+			CallToolResult result = client.callTool(new CallToolRequest("eclipse_log_status", Map.of()));
+
+			assertEquals(Boolean.TRUE, result.isError());
+			String text = ((TextContent) result.content().get(0)).text();
+			assertTrue(text.contains("required property 'message' not found"), text);
+		} finally {
+			Locale.setDefault(previous);
 		}
 	}
 

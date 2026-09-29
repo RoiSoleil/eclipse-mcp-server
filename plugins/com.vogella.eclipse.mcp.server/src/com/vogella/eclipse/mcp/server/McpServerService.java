@@ -22,6 +22,7 @@ import com.vogella.eclipse.mcp.core.McpToolRegistry;
 import com.vogella.eclipse.mcp.core.TracePages;
 import com.vogella.eclipse.mcp.server.internal.ActiveSessions;
 import com.vogella.eclipse.mcp.server.internal.BearerTokenFilter;
+import com.vogella.eclipse.mcp.server.internal.JsonRpcErrorFilter;
 import com.vogella.eclipse.mcp.server.internal.BundleJsonSchemaValidator;
 import com.vogella.eclipse.mcp.server.internal.EndpointFile;
 import com.vogella.eclipse.mcp.server.internal.McpToolAdapter;
@@ -215,6 +216,9 @@ public final class McpServerService {
 		FilterHolder filter = new FilterHolder(new BearerTokenFilter(token));
 		filter.setAsyncSupported(true);
 		context.addFilter(filter, ENDPOINT_PATH + "/*", EnumSet.of(DispatcherType.REQUEST)); //$NON-NLS-1$
+		FilterHolder errors = new FilterHolder(new JsonRpcErrorFilter());
+		errors.setAsyncSupported(true);
+		context.addFilter(errors, ENDPOINT_PATH + "/*", EnumSet.of(DispatcherType.REQUEST)); //$NON-NLS-1$
 		// deliberately outside that mapping: a browser cannot put the bearer token on
 		// a plain navigation, so a trace page is guarded by 128 random bits in its own
 		// URL instead. The connector is loopback only, so the pair is a capability URL

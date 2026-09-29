@@ -56,9 +56,13 @@ public final class BearerTokenFilter implements Filter {
 		String session = httpRequest.getHeader("Mcp-Session-Id"); //$NON-NLS-1$
 		if ("DELETE".equals(httpRequest.getMethod())) { //$NON-NLS-1$
 			ActiveSessions.ended(session);
-		} else {
-			ActiveSessions.seen(session);
+			chain.doFilter(request, response);
+			return;
 		}
 		chain.doFilter(request, response);
+		// only once the transport accepted it, or a stale id from before a restart counts as another client
+		if (httpResponse.getStatus() < 400) {
+			ActiveSessions.seen(session);
+		}
 	}
 }
