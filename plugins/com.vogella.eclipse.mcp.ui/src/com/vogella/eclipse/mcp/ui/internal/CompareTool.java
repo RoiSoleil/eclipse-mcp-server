@@ -89,7 +89,7 @@ public final class CompareTool implements IMcpTool {
 			return McpToolResult.error("The argument 'left' is required."); //$NON-NLS-1$
 		}
 		String rightPath = args.getString("right"); //$NON-NLS-1$
-		String content = args.getString("content"); //$NON-NLS-1$
+		String content = args.getText("content"); //$NON-NLS-1$
 		String revision = args.getString("revision"); //$NON-NLS-1$
 		Object historyTimestamp = arguments.get("historyTimestamp"); //$NON-NLS-1$
 		int given = (rightPath == null ? 0 : 1) + (content == null ? 0 : 1) + (revision == null ? 0 : 1)

@@ -32,6 +32,12 @@ public final class ToolArguments {
 		return text.isEmpty() ? null : text;
 	}
 
+	/** Returns the value exactly as sent, whitespace included, or {@code null} when absent. */
+	public String getText(String name) {
+		Object value = arguments.get(name);
+		return value == null ? null : String.valueOf(value);
+	}
+
 	public String getString(String name, String fallback) {
 		String value = getString(name);
 		return value == null ? fallback : value;

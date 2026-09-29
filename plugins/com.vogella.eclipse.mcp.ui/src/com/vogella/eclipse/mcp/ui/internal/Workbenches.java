@@ -69,10 +69,20 @@ public final class Workbenches {
 
 	/** The failure message for an exception, naming the missing IDE workbench rather than printing its exception. */
 	static String describe(Throwable e) {
-		if (e instanceof IllegalStateException && !ide() && running()) {
+		if (e instanceof IllegalStateException && fromPlatformUi(e) && !ide() && running()) {
 			return NEEDS_IDE;
 		}
 		return "The request failed: " + e; //$NON-NLS-1$
+	}
+
+	/** Whether PlatformUI threw it, since a tool's own IllegalStateException carries its own explanation. */
+	private static boolean fromPlatformUi(Throwable e) {
+		for (StackTraceElement frame : e.getStackTrace()) {
+			if (PlatformUI.class.getName().equals(frame.getClassName())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The shells of the workbench windows, the IDE's or the E4 application's. */

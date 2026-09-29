@@ -99,7 +99,7 @@ public final class KeyboardTools {
 		@Override
 		public McpToolResult call(Map<String, Object> arguments, IProgressMonitor monitor) {
 			ToolArguments args = ToolArguments.of(arguments);
-			String text = args.getString("text"); //$NON-NLS-1$
+			String text = args.getText("text"); //$NON-NLS-1$
 			if (text == null) {
 				return McpToolResult.error("Give the 'text' to insert."); //$NON-NLS-1$
 			}
