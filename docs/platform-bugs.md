@@ -351,3 +351,11 @@ An XTest button event from outside the IDE at the same point selected the tab.
 `Display.post` (`org.eclipse.swt.widgets.Display`, GTK, `case SWT.MouseDown`) builds a `GdkEventButton` with `send_event = 1` for the window under the pointer and hands it to `gdk_event_put`, and GTK does not deliver it to the widget; `MouseMove` works because it warps through `setCursorLocation` instead.
 `XTestInput` sends the button through libXtst with the FFM API and keeps `Display.post` for the move and for other window systems.
 Nothing filed upstream yet.
+
+## `Display.getActiveShell` on GTK reports a refused `forceActive` as granted
+
+Observed 2026-09-30 on GNOME Wayland with SWT `3.135.100.v20260924-0820`: after `Shell.forceActive` on a window the user had not clicked, `getActiveShell` returned the shell, while `gtk_window_is_active` stayed false and the compositor kept focus elsewhere for as long as it was polled.
+Under Xvfb the same program got focus and both agreed.
+`Shell.bringToTop` (GTK) ends with `display.activeShell = this; display.activePending = true;` after `gdk_window_focus`, before any focus-in event, so the active shell reads back the request rather than the result.
+`NativeForeground.isForeground` therefore trusts the active shell only once `activePending` is false, and otherwise asks `gtk_window_is_active` for each shell, both reached by name.
+Nothing filed upstream yet.
