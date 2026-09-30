@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -62,8 +64,8 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
  */
 class McpServerServiceTest {
 
-	/** A port unlikely to collide with a developer's IDE running the same server. */
-	private static final int TEST_PORT = 18642;
+	/** A free port, so parallel builds on one machine and a developer's own IDE never collide. */
+	private static int testPort;
 
 	private static final String PROJECT = "mcp-endpoint-test";
 
@@ -91,7 +93,10 @@ class McpServerServiceTest {
 
 	@BeforeAll
 	static void startServer() throws Exception {
-		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT, TEST_PORT);
+		try (ServerSocket probe = new ServerSocket(0, 0, InetAddress.getLoopbackAddress())) {
+			testPort = probe.getLocalPort();
+		}
+		InstanceScope.INSTANCE.getNode(McpPreferences.QUALIFIER).putInt(McpPreferences.KEY_PORT, testPort);
 		McpServerService.getInstance().start();
 		assertNotNull(endpoint(), "The server did not report an endpoint");
 		createSampleProject();
@@ -176,8 +181,8 @@ class McpServerServiceTest {
 	@Test
 	void listensOnTheConfiguredLoopbackPort() {
 		assertTrue(McpServerService.getInstance().isRunning());
-		assertEquals(TEST_PORT, McpServerService.getInstance().getPort());
-		assertEquals("http://127.0.0.1:%d/mcp".formatted(TEST_PORT), endpoint().url());
+		assertEquals(testPort, McpServerService.getInstance().getPort());
+		assertEquals("http://127.0.0.1:%d/mcp".formatted(testPort), endpoint().url());
 	}
 
 	@Test
@@ -455,7 +460,7 @@ class McpServerServiceTest {
 
 	private static McpSyncClient connect() {
 		HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
-				.builder("http://127.0.0.1:%d".formatted(TEST_PORT)).endpoint("/mcp")
+				.builder("http://127.0.0.1:%d".formatted(testPort)).endpoint("/mcp")
 				.jsonMapper(new JacksonMcpJsonMapperSupplier().get())
 				.httpRequestCustomizer((builder, method, uri, body, context) -> builder.header("Authorization",
 						"Bearer " + endpoint().token()))
