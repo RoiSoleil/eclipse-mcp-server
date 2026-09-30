@@ -460,8 +460,8 @@ public final class ScreenshotTools {
 			// has passes on an image of somebody's browser. That is the one failure a
 			// caller cannot detect: settled, converged, plausible area, right zoom. On
 			// Windows the screen's own foreground window decides, since an active shell
-			// there can be active inside the process only; elsewhere a display with no
-			// active shell is as much as SWT will say portably.
+			// there can be active inside the process only; on GTK the compositor's
+			// activation state, since SWT marks a shell active as soon as it asks.
 			boolean foreground = NativeForeground.isForeground(display);
 			boolean occluded = !foreground && !sameTurn;
 			boolean screenUnreliable = (sameTurn || occluded) && printable != null;

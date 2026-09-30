@@ -3,6 +3,7 @@ package com.vogella.eclipse.mcp.ui.internal;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 
@@ -10,7 +11,8 @@ import com.vogella.eclipse.mcp.core.FileLocations;
 
 /**
  * Every reference to SWT's win32 internals, which is what makes a raise stick
- * on Windows.
+ * on Windows, and to the GTK activation state that tells a granted raise from
+ * a requested one.
  * <p>
  * {@code Shell.forceActive} ends in {@code SetForegroundWindow}, and Windows
  * refuses that to a process that does not already own the foreground: the call
@@ -34,6 +36,8 @@ import com.vogella.eclipse.mcp.core.FileLocations;
 final class NativeForeground {
 
 	private static final String OS = "org.eclipse.swt.internal.win32.OS"; //$NON-NLS-1$
+
+	private static final String GTK = "org.eclipse.swt.internal.gtk.GTK"; //$NON-NLS-1$
 
 	private NativeForeground() {
 	}
@@ -110,7 +114,47 @@ final class NativeForeground {
 	 */
 	static boolean isForeground(Display display) {
 		Boolean owned = ownsForeground();
+		if (owned == null) {
+			owned = gtkActivated(display);
+		}
 		return owned != null ? owned.booleanValue() : display.getActiveShell() != null;
+	}
+
+	/**
+	 * On GTK, whether the window system has confirmed that a shell of this display
+	 * is active, or null off GTK.
+	 * <p>
+	 * {@code Shell.bringToTop} sets {@code Display.activeShell} as soon as it has
+	 * asked for focus and marks it {@code activePending}, which only a focus-in
+	 * event clears, so {@code getActiveShell} after {@code forceActive} reads back
+	 * the request. GNOME on Wayland refuses the request to a window the user has
+	 * not clicked, and the tools then reported a foreground they did not have.
+	 * {@code gtk_window_is_active} follows the compositor's own state.
+	 */
+	private static Boolean gtkActivated(Display display) {
+		if (!"gtk".equals(SWT.getPlatform())) { //$NON-NLS-1$
+			return null;
+		}
+		try {
+			Field pending = Display.class.getDeclaredField("activePending"); //$NON-NLS-1$
+			pending.setAccessible(true);
+			if (display.getActiveShell() != null && !pending.getBoolean(display)) {
+				return Boolean.TRUE;
+			}
+			Method isActive = Class.forName(GTK, true, Shell.class.getClassLoader())
+					.getMethod("gtk_window_is_active", long.class); //$NON-NLS-1$
+			Field handle = Shell.class.getDeclaredField("shellHandle"); //$NON-NLS-1$
+			handle.setAccessible(true);
+			for (Shell shell : display.getShells()) {
+				if (!shell.isDisposed() && shell.isVisible()
+						&& Boolean.TRUE.equals(isActive.invoke(null, Long.valueOf(handle.getLong(shell))))) {
+					return Boolean.TRUE;
+				}
+			}
+			return Boolean.FALSE;
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+			return null;
+		}
 	}
 
 	/** Whether a window of this process holds the foreground, or null where that cannot be asked. */

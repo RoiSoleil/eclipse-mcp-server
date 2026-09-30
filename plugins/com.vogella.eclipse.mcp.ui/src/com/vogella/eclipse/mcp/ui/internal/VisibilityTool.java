@@ -1,5 +1,7 @@
 package com.vogella.eclipse.mcp.ui.internal;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -28,6 +30,8 @@ import com.vogella.eclipse.mcp.core.json.JsonObject;
 public final class VisibilityTool implements IMcpTool {
 
 	private static final long UI_TIMEOUT_SECONDS = 10;
+
+	private static final long ACTIVATION_WAIT_MILLIS = 1000;
 
 	private static volatile boolean hiddenByUs;
 
@@ -66,10 +70,40 @@ public final class VisibilityTool implements IMcpTool {
 		if (!"hidden".equals(mode) && !"minimized".equals(mode)) { //$NON-NLS-1$ //$NON-NLS-2$
 			return McpToolResult.error("Unknown mode '%s', expected 'hidden' or 'minimized'.".formatted(mode)); //$NON-NLS-1$
 		}
-		return UiThread.call(UI_TIMEOUT_SECONDS, () -> apply(visible, mode));
+		List<JsonObject> unconfirmed = new ArrayList<>();
+		UiThread.Outcome outcome = UiThread.run(UI_TIMEOUT_SECONDS, () -> apply(visible, mode, unconfirmed));
+		if (outcome.error() != null) {
+			return McpToolResult.error(outcome.error());
+		}
+		if (!unconfirmed.isEmpty() && !UiThread.onUiThread() && awaitActivation(monitor)) {
+			for (JsonObject entry : unconfirmed) {
+				entry.put("foreground", Boolean.TRUE); //$NON-NLS-1$
+				entry.remove("foregroundNote"); //$NON-NLS-1$
+			}
+		}
+		return McpToolResult.of(outcome.value().toString());
 	}
 
-	private static JsonObject apply(boolean visible, String mode) {
+	/** Waits briefly for the window system to answer the raise, since activation arrives as a later event. */
+	private static boolean awaitActivation(IProgressMonitor monitor) {
+		long deadline = System.currentTimeMillis() + ACTIVATION_WAIT_MILLIS;
+		while (System.currentTimeMillis() < deadline && (monitor == null || !monitor.isCanceled())) {
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return false;
+			}
+			UiThread.Outcome active = UiThread.run(UI_TIMEOUT_SECONDS,
+					() -> NativeForeground.isForeground(Workbenches.display()) ? new JsonObject() : null);
+			if (active.value() != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static JsonObject apply(boolean visible, String mode, List<JsonObject> unconfirmed) {
 		JsonArray windows = new JsonArray();
 		for (Shell shell : Workbenches.windowShells()) {
 			if (shell == null || shell.isDisposed()) {
@@ -111,6 +145,7 @@ public final class VisibilityTool implements IMcpTool {
 				entry.put("foreground", Boolean.valueOf(active)) //$NON-NLS-1$
 						.put("foregroundMethod", method); //$NON-NLS-1$
 				if (!active) {
+					unconfirmed.add(entry);
 					entry.put("foregroundNote", nativeRefusal != null //$NON-NLS-1$
 							? "Focus was requested, the window system did not grant it, and the native raise that works around the Windows foreground lock could not run: %s. The window is visible and unminimized, but something else is still in front, so a screen read would photograph that instead. eclipse_screenshot reports the same state as 'foreground'." //$NON-NLS-1$
 									.formatted(nativeRefusal)
