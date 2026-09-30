@@ -123,7 +123,7 @@ The build, test run, sampling and provisioning registries are per IDE, so those 
 - JUnit comes from the Eclipse SDK (bundle `junit-jupiter-api` 6.x); do not add a Maven location for it.
 - Generated output that carries semantics, `OSGI-INF` descriptors above all, can diverge from source silently, which is why `eclipse_run_tests` always reports `descriptorGeneration` and `buildBeforeLaunch`. A never-read `@Reference` field can be an ordering guarantee, not dead code.
 - `.github/workflows/build.yml` runs `mvn clean verify` under `xvfb-run` on every push and PR.
-- `Jenkinsfile` does the same for an Eclipse JIPP (`apache-maven-latest`, `temurin-jdk25-latest`), without `xvnc` because the suite needs no display and one would mask a tool that started needing a workbench, and without `-Dmaven.test.failure.ignore=true`.
+- `Jenkinsfile` does the same on a Jenkins with the tools `Maven 3.9` and `Java 25 Temurin` on the `built-in` agent, without `xvnc` because the suite needs no display and one would mask a tool that started needing a workbench, and without `-Dmaven.test.failure.ignore=true`. The agent still needs the GTK 3 libraries, because SWT loads them without a display and the ui tool tests fail with `libgtk-3.so.0` missing.
 
 ## Gotchas
 

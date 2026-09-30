@@ -50,7 +50,9 @@ class WaitUntilQuietToolTest {
 		// auto-build that sits in sleeping between the two calls, which counts as busy,
 		// gets waited for and is then reported rather than dropped
 		Map<String, Object> before = (Map<String, Object>) result.get("jobsBefore");
-		if (Boolean.FALSE.equals(before.get("building")) && ((List<?>) before.get("otherJobs")).isEmpty()) {
+		// idle too, since a job the snapshot does not name can still schedule the auto-build
+		if (Boolean.FALSE.equals(before.get("building")) && ((List<?>) before.get("otherJobs")).isEmpty()
+				&& Boolean.TRUE.equals(before.get("idle"))) {
 			assertEquals(List.of(), waitedFor, "got " + result);
 		}
 	}
